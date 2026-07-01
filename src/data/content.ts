@@ -1,4 +1,5 @@
 import type { GrammarItem, KanjiItem, QuizQuestion, StudyContent, VocabularyItem } from "../types";
+import { expandedKanji } from "./expandedKanji";
 import { shuffleDeterministic, uniqueTake } from "../utils/random";
 
 const kanjiRows = [
@@ -481,10 +482,23 @@ const makeGrammar = (row: string, index: number): GrammarItem => {
 export const starterKanji = kanjiRows.map(makeKanji);
 export const starterVocabulary = vocabularyRows.map(makeVocabulary);
 export const starterGrammar = grammarRows.map(makeGrammar);
+export const allBundledKanji = [...starterKanji, ...expandedKanji];
 
 function choices(answer: string, pool: string[], seed: string, count = 4): string[] {
   const distractors = uniqueTake(shuffleDeterministic(pool.filter((item) => item && item !== answer), seed), count - 1);
   return shuffleDeterministic([answer, ...distractors], `${seed}-choices`);
+}
+
+function japaneseOnlyChoicePool<T>(items: T[], mapper: (item: T) => string): string[] {
+  return items.map(mapper).filter((value) => value && !/[A-Za-z]/.test(value));
+}
+
+function grammarLabel(item: GrammarItem): string {
+  return item.pattern
+    .replaceAll("V", "動詞")
+    .replaceAll("いA", "い形容詞")
+    .replaceAll("なA", "な形容詞")
+    .replaceAll("N", "名詞");
 }
 
 function buildQuestions(): QuizQuestion[] {
@@ -495,10 +509,10 @@ function buildQuestions(): QuizQuestion[] {
       category: "kanji",
       subcategory: "kanji-reading",
       type: "multiple-choice",
-      prompt: `Choose the most common reading for 「${item.kanji}」. Do not rely on furigana for this one.`,
+      prompt: `「${item.kanji}」の読み方として最も自然なものを選びなさい。`,
       choices: choices(item.readings[0], starterKanji.map((k) => k.readings[0]), item.id),
       correctAnswer: item.readings[0],
-      explanation: `「${item.kanji}」 is commonly read ${item.readings[0]} in this compound. Example: ${item.exampleSentence}`,
+      explanation: `「${item.kanji}」は「${item.readings[0]}」と読む。例文：${item.exampleSentence}`,
       relatedContentId: item.id,
       difficulty: item.difficulty,
       tags: item.tags
@@ -510,10 +524,10 @@ function buildQuestions(): QuizQuestion[] {
       category: "kanji",
       subcategory: "kanji-meaning",
       type: "multiple-choice",
-      prompt: `What is the core meaning of 「${item.kanji}」 in this sentence? ${item.exampleSentence}`,
-      choices: choices(item.meaning, starterKanji.map((k) => k.meaning), `${item.id}-meaning`),
-      correctAnswer: item.meaning,
-      explanation: `In this sentence, 「${item.kanji}」 means "${item.meaning}".`,
+      prompt: `次の文で使う語として最も自然なものを選びなさい。\n${item.exampleSentence.replace(item.kanji, "（　）")}`,
+      choices: choices(item.kanji, starterKanji.map((k) => k.kanji), `${item.id}-meaning`),
+      correctAnswer: item.kanji,
+      explanation: `この文では「${item.kanji}」を入れると自然な文になる。読み：${item.readings.join("、")}`,
       relatedContentId: item.id,
       difficulty: item.difficulty,
       tags: item.tags
@@ -525,10 +539,10 @@ function buildQuestions(): QuizQuestion[] {
       category: "vocabulary",
       subcategory: "vocabulary-recognition",
       type: "multiple-choice",
-      prompt: `Choose the best meaning of 「${item.word}」.`,
-      choices: choices(item.meaning, starterVocabulary.map((v) => v.meaning), item.id),
-      correctAnswer: item.meaning,
-      explanation: `「${item.word}」 means "${item.meaning}". Similar word to watch: ${item.similarWord}.`,
+      prompt: `「${item.word}」の説明として最も近いものを選びなさい。`,
+      choices: choices(item.japaneseDefinition, starterVocabulary.map((v) => v.japaneseDefinition), item.id),
+      correctAnswer: item.japaneseDefinition,
+      explanation: `「${item.word}」は「${item.japaneseDefinition}」という意味で使う。似た語：${item.similarWord}`,
       relatedContentId: item.id,
       difficulty: item.difficulty,
       tags: item.tags
@@ -540,10 +554,10 @@ function buildQuestions(): QuizQuestion[] {
       category: "vocabulary",
       subcategory: "vocabulary-context",
       type: "fill-blank",
-      prompt: `Choose the word that best fits the context. ${item.japaneseDefinition} / Common collocation: ${item.collocation}`,
+      prompt: `説明とよく使う組み合わせを見て、最も自然な語を選びなさい。\n説明：${item.japaneseDefinition}\nよく使う形：${item.collocation}`,
       choices: choices(item.word, starterVocabulary.map((v) => v.word), `${item.id}-context`),
       correctAnswer: item.word,
-      explanation: `The natural choice is 「${item.word}」. Example: ${item.exampleSentence}`,
+      explanation: `正解は「${item.word}」。例文：${item.exampleSentence}`,
       relatedContentId: item.id,
       difficulty: item.difficulty,
       tags: item.tags
@@ -555,10 +569,10 @@ function buildQuestions(): QuizQuestion[] {
       category: "grammar",
       subcategory: "grammar-recognition",
       type: "multiple-choice",
-      prompt: `Which grammar pattern best matches this meaning? ${item.meaning}`,
-      choices: choices(item.pattern, starterGrammar.map((g) => g.pattern), item.id),
-      correctAnswer: item.pattern,
-      explanation: `${item.pattern}: ${item.japaneseExplanation} Formation: ${item.formation}`,
+      prompt: `次の説明に合う文法を選びなさい。\n${item.japaneseExplanation}`,
+      choices: choices(grammarLabel(item), starterGrammar.map(grammarLabel), item.id),
+      correctAnswer: grammarLabel(item),
+      explanation: `${grammarLabel(item)}：${item.japaneseExplanation} 例文：${item.example}`,
       relatedContentId: item.id,
       difficulty: item.difficulty,
       tags: item.tags
@@ -570,10 +584,10 @@ function buildQuestions(): QuizQuestion[] {
       category: "grammar",
       subcategory: "grammar-nuance",
       type: "multiple-choice",
-      prompt: `Choose the pattern for this nuance: ${item.memoryHint} Example idea: ${item.translation}`,
-      choices: choices(item.pattern, starterGrammar.map((g) => g.pattern), `${item.id}-nuance`),
-      correctAnswer: item.pattern,
-      explanation: `${item.pattern} fits because: ${item.japaneseExplanation} Do not confuse with: ${item.commonConfusion}`,
+      prompt: `次の例文に最も合う文法を選びなさい。\n${item.example}`,
+      choices: choices(grammarLabel(item), starterGrammar.map(grammarLabel), `${item.id}-nuance`),
+      correctAnswer: grammarLabel(item),
+      explanation: `${grammarLabel(item)}：${item.japaneseExplanation} 例文：${item.example}`,
       relatedContentId: item.id,
       difficulty: item.difficulty,
       tags: item.tags
@@ -581,16 +595,16 @@ function buildQuestions(): QuizQuestion[] {
   });
 
   const ordering = [
-    ["q-so-001", "約束した|以上は|最後まで|やるべきだ", "Put the sentence in natural order: Now that you promised, you should do it to the end.", "g-002"],
-    ["q-so-002", "高い物が|必ずしも|よい|とは限らない", "Put the sentence in natural order: Expensive things are not necessarily good.", "g-045"],
-    ["q-so-003", "準備が|でき次第|すぐに|出発します", "Put the sentence in natural order: We will leave as soon as preparation is ready.", "g-030"],
-    ["q-so-004", "年齢に|かかわらず|誰でも|参加できる", "Put the sentence in natural order: Anyone can participate regardless of age.", "g-050"],
-    ["q-so-005", "努力した|ものの|結果は|出なかった", "Put the sentence in natural order: Although I tried, I did not get results.", "g-059"],
-    ["q-so-006", "安全を|考慮した|上で|判断する", "Put the sentence in natural order: Decide after considering safety.", "g-005"],
-    ["q-so-007", "このままでは|問題が|起こり|かねない", "Put the sentence in natural order: At this rate, a problem could occur.", "g-009"],
-    ["q-so-008", "知っている|くせに|何も|言わない", "Put the sentence in natural order: Although he knows, he says nothing.", "g-022"],
-    ["q-so-009", "資料に|基づいて|意見を|述べる", "Put the sentence in natural order: State an opinion based on the materials.", "g-054"],
-    ["q-so-010", "冗談|ぬきで|真剣に|考えている", "Put the sentence in natural order: Jokes aside, I am thinking seriously.", "g-056"]
+    ["q-so-001", "約束した|以上は|最後まで|やるべきだ", "次の文が自然な順番になるように並べなさい。", "g-002"],
+    ["q-so-002", "高い物が|必ずしも|よい|とは限らない", "次の文が自然な順番になるように並べなさい。", "g-045"],
+    ["q-so-003", "準備が|でき次第|すぐに|出発します", "次の文が自然な順番になるように並べなさい。", "g-030"],
+    ["q-so-004", "年齢に|かかわらず|誰でも|参加できる", "次の文が自然な順番になるように並べなさい。", "g-050"],
+    ["q-so-005", "努力した|ものの|結果は|出なかった", "次の文が自然な順番になるように並べなさい。", "g-059"],
+    ["q-so-006", "安全を|考慮した|上で|判断する", "次の文が自然な順番になるように並べなさい。", "g-005"],
+    ["q-so-007", "このままでは|問題が|起こり|かねない", "次の文が自然な順番になるように並べなさい。", "g-009"],
+    ["q-so-008", "知っている|くせに|何も|言わない", "次の文が自然な順番になるように並べなさい。", "g-022"],
+    ["q-so-009", "資料に|基づいて|意見を|述べる", "次の文が自然な順番になるように並べなさい。", "g-054"],
+    ["q-so-010", "冗談|ぬきで|真剣に|考えている", "次の文が自然な順番になるように並べなさい。", "g-056"]
   ] as const;
   ordering.forEach(([id, answer, prompt, relatedContentId], index) => {
     const parts = answer.split("|");
@@ -607,7 +621,7 @@ function buildQuestions(): QuizQuestion[] {
         [...parts].reverse().join("|")
       ], id),
       correctAnswer: answer,
-      explanation: `The fixed chunk is 「${parts.slice(0, 2).join("")}」, so the natural order is: ${parts.join(" / ")}.`,
+      explanation: `固定した形に注意する。自然な順番：${parts.join(" / ")}`,
       relatedContentId,
       difficulty: (index % 3 === 0 ? 3 : 2),
       tags: ["ordering", "grammar"]
@@ -615,16 +629,16 @@ function buildQuestions(): QuizQuestion[] {
   });
 
   const readings = [
-    ["q-rd-001", "新しい制度が始まったが、利用者の大半はまだ詳しい内容を理解していない。", "What is the main issue?", "Most users do not yet understand the new system.", "The passage says a new system started, but most users do not understand the details.", "v-128"],
-    ["q-rd-002", "締切直前に資料を修正したため、最終確認の時間が不足した。", "Why was final checking insufficient?", "Because the materials were corrected just before the deadline.", "The cause is the last-minute correction before the deadline.", "v-113"],
-    ["q-rd-003", "価格は高い反面、保証期間が長く、長期的には安心できる。", "What contrast is described?", "The price is high, but the long warranty gives peace of mind.", "反面 marks the opposite side of the same product.", "g-057"],
-    ["q-rd-004", "調査結果に基づいて方針を変更することになった。", "What was the basis for the change?", "The survey results.", "に基づいて indicates the evidence or basis.", "g-054"],
-    ["q-rd-005", "彼は経験が豊富なだけでなく、説明も具体的で分かりやすい。", "What is being added?", "His explanations are specific and easy to understand.", "だけでなく adds another positive point.", "g-035"],
-    ["q-rd-006", "交通状況に応じて、出発時間を調整してください。", "What should change depending on conditions?", "The departure time.", "に応じて means adjust according to the traffic situation.", "g-049"],
-    ["q-rd-007", "安全上の理由から、この設備の使用は一時的に制限されています。", "Why is use restricted?", "For safety reasons.", "安全上の理由から explains the viewpoint and cause.", "g-032"],
-    ["q-rd-008", "結果は予想に反して悪くなかったが、細かいミスが目立った。", "What happened contrary to expectation?", "The result was not bad.", "に反して marks a result contrary to expectation.", "g-053"],
-    ["q-rd-009", "この表現は使えないことはないが、やや不自然に聞こえる。", "What is the speaker's judgment?", "It is usable, but sounds somewhat unnatural.", "ないことはない is a partial, weak acceptance.", "g-046"],
-    ["q-rd-010", "試験直前は新しい教材を増やすより、個人の誤りを確認するべきだ。", "What should be prioritized just before the exam?", "Reviewing personal mistakes.", "The passage contrasts adding new materials with reviewing personal errors.", "v-176"]
+    ["q-rd-001", "新しい制度が始まったが、利用者の大半はまだ詳しい内容を理解していない。", "問題になっていることは何ですか。", "利用者の多くが新制度の内容をまだ理解していないこと。", "新しい制度は始まったが、利用者の大半が詳しい内容を理解していないと述べている。", "v-128"],
+    ["q-rd-002", "締切直前に資料を修正したため、最終確認の時間が不足した。", "最終確認の時間が不足した理由は何ですか。", "締切直前に資料を修正したため。", "「ため」は理由を表し、資料の修正が時間不足の原因になっている。", "v-113"],
+    ["q-rd-003", "価格は高い反面、保証期間が長く、長期的には安心できる。", "どのような対比が述べられていますか。", "価格は高いが、保証期間が長く安心できること。", "「反面」は同じ物の反対の面を示す。", "g-057"],
+    ["q-rd-004", "調査結果に基づいて方針を変更することになった。", "方針変更の根拠は何ですか。", "調査結果。", "「に基づいて」は根拠を表す。", "g-054"],
+    ["q-rd-005", "彼は経験が豊富なだけでなく、説明も具体的で分かりやすい。", "追加されている内容は何ですか。", "説明も具体的で分かりやすいこと。", "「だけでなく」は別の内容を加える表現。", "g-035"],
+    ["q-rd-006", "交通状況に応じて、出発時間を調整してください。", "何を調整する必要がありますか。", "出発時間。", "「に応じて」は状況に合わせることを表す。", "g-049"],
+    ["q-rd-007", "安全上の理由から、この設備の使用は一時的に制限されています。", "使用が制限されている理由は何ですか。", "安全上の理由。", "「安全上」は安全という面から見た理由を表す。", "g-032"],
+    ["q-rd-008", "結果は予想に反して悪くなかったが、細かいミスが目立った。", "予想と違っていたことは何ですか。", "結果が悪くなかったこと。", "「に反して」は予想や期待と反対の結果を表す。", "g-053"],
+    ["q-rd-009", "この表現は使えないことはないが、やや不自然に聞こえる。", "話し手の判断として最も近いものはどれですか。", "使えるが、少し不自然に聞こえる。", "「ないことはない」は弱い肯定を表す。", "g-046"],
+    ["q-rd-010", "試験直前は新しい教材を増やすより、個人の誤りを確認するべきだ。", "試験直前に優先すべきことは何ですか。", "自分の誤りを確認すること。", "新しい教材を増やすより、個人の誤りを確認するべきだと述べている。", "v-176"]
   ] as const;
   readings.forEach(([id, passage, prompt, answer, explanation, relatedContentId]) => {
     questions.push({
@@ -634,14 +648,14 @@ function buildQuestions(): QuizQuestion[] {
       type: "multiple-choice",
       prompt: `${passage}\n${prompt}`,
       choices: choices(answer, [
-        "Adding as much new material as possible.",
-        "Ignoring small personal mistakes.",
-        "Changing the exam date.",
-        "Reviewing personal mistakes.",
-        "The survey results.",
-        "For safety reasons.",
-        "The departure time.",
-        "Most users do not yet understand the new system."
+        "新しい教材をできるだけ増やすこと。",
+        "細かい誤りを気にしないこと。",
+        "試験日を変更すること。",
+        "自分の誤りを確認すること。",
+        "調査結果。",
+        "安全上の理由。",
+        "出発時間。",
+        "利用者の多くが新制度の内容をまだ理解していないこと。"
       ], id),
       correctAnswer: answer,
       explanation,
@@ -654,10 +668,45 @@ function buildQuestions(): QuizQuestion[] {
   return questions;
 }
 
-export const starterQuestions = buildQuestions();
+function buildExpandedKanjiQuestions(): QuizQuestion[] {
+  const questionKanji = shuffleDeterministic(expandedKanji, "expanded-kanji-questions").slice(0, 320);
+  const readingPool = expandedKanji.map((item) => item.readings[0]).filter(Boolean);
+  const kanjiPool = japaneseOnlyChoicePool(expandedKanji, (item) => item.kanji);
+  return questionKanji.flatMap((item, index) => {
+    const readingQuestion: QuizQuestion = {
+      id: `q-ekr-${String(index + 1).padStart(4, "0")}`,
+      category: "kanji",
+      subcategory: "kanji-reading",
+      type: "multiple-choice",
+      prompt: `「${item.kanji}」の読み方として正しいものを選びなさい。`,
+      choices: choices(item.readings[0], readingPool, `${item.id}-expanded-reading`),
+      correctAnswer: item.readings[0],
+      explanation: `「${item.kanji}」の主な読み：${item.readings.join("、")}`,
+      relatedContentId: item.id,
+      difficulty: item.difficulty,
+      tags: item.tags
+    };
+    const meaningQuestion: QuizQuestion = {
+      id: `q-ekm-${String(index + 1).padStart(4, "0")}`,
+      category: "kanji",
+      subcategory: "kanji-meaning",
+      type: "multiple-choice",
+      prompt: `次の条件に合う漢字を選びなさい。\n読み：${item.readings[0]}\n画数：${item.tags.find((tag) => tag.startsWith("strokes-"))?.replace("strokes-", "") ?? "未確認"}`,
+      choices: choices(item.kanji, kanjiPool, `${item.id}-expanded-meaning`),
+      correctAnswer: item.kanji,
+      explanation: `正解は「${item.kanji}」。主な読み：${item.readings.join("、")}`,
+      relatedContentId: item.id,
+      difficulty: item.difficulty,
+      tags: item.tags
+    };
+    return [readingQuestion, meaningQuestion];
+  });
+}
+
+export const starterQuestions = [...buildQuestions(), ...buildExpandedKanjiQuestions()];
 
 export const starterContent: StudyContent = {
-  kanji: starterKanji,
+  kanji: allBundledKanji,
   vocabulary: starterVocabulary,
   grammar: starterGrammar,
   questions: starterQuestions

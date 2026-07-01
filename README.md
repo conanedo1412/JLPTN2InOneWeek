@@ -7,7 +7,7 @@ The bundled questions are original JLPT-style practice material. They are not of
 ## Requirements
 
 - Node.js 22 or newer
-- npm
+- pnpm
 
 ## Local Development
 
@@ -27,7 +27,7 @@ Open the Vite URL printed by `pnpm run dev`.
 - First-run setup with exam date and daily study time
 - Five-day adaptive study plan
 - Diagnostic, quick review, weak-area practice, and timed quiz modes
-- Flashcard learn mode with simple cram-friendly scheduling
+- Flashcard mode with shuffled kanji, vocabulary, and grammar decks
 - Mistake log with filters and corrected status
 - Local progress storage with corrupted-data recovery
 - JSON content import, CSV vocabulary import, progress export/import, and reset
@@ -42,6 +42,16 @@ pnpm run validate:content
 ```
 
 The validator checks duplicate IDs, duplicate choices, missing correct answers, broken content references, empty explanations, required fields, difficulty values, and minimum starter content counts.
+
+## Bundled Study Bank
+
+The app includes roughly one thousand cumulative N2-prep kanji cards, 200+ vocabulary cards, 60+ grammar cards, and an expanded quiz bank. The broad kanji flashcard bank is generated from public kanjiapi.dev JLPT buckets and bundled locally so the app still works offline after deployment. The script is:
+
+```bash
+node scripts/generate-expanded-kanji.mjs
+```
+
+The original quiz prompts and explanations in this app are JLPT-style practice material, not official JLPT questions.
 
 ## GitHub Pages Deployment
 

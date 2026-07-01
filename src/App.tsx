@@ -9,13 +9,15 @@ import { emptyProgress, loadProgress, saveProgress } from "./storage/progressSto
 import { exportProgress, importProgress, parseContentJson, parseVocabularyCsv, validateContent } from "./services/importExport";
 import type { AppProgress, Confidence, GrammarItem, QuizQuestion, Rating, StudyCategory, StudyContent, Subcategory, VocabularyItem } from "./types";
 import { addLocalDays, daysBetweenLocal, todayLocal } from "./utils/date";
+import { shuffleDeterministic } from "./utils/random";
 
 type Page = "today" | "learn" | "quiz" | "mistakes" | "progress" | "settings";
 type QuizPreset = "diagnostic" | "quick" | "weak" | "timed" | "kanji" | "vocab" | "grammar" | "final";
+type FlashcardItem = GrammarItem | VocabularyItem | StudyContent["kanji"][number];
 
 const navItems: { page: Page; label: string }[] = [
   { page: "today", label: "Today" },
-  { page: "learn", label: "Learn" },
+  { page: "learn", label: "Cards" },
   { page: "quiz", label: "Quiz" },
   { page: "mistakes", label: "Mistakes" },
   { page: "progress", label: "Progress" },
@@ -368,15 +370,29 @@ function TodayPage({
 function LearnPage({ progress, content, onProgress }: { progress: AppProgress; content: StudyContent; onProgress: (recipe: (current: AppProgress) => AppProgress) => void }) {
   const setup = progress.setup!;
   const dueIds = dueReviewIds(progress.review, setup.activeDay);
-  const [kind, setKind] = useState<"kanji" | "vocabulary" | "grammar">("grammar");
+  const [kind, setKind] = useState<"kanji" | "vocabulary" | "grammar">("kanji");
+  const [deckMode, setDeckMode] = useState<"mixed" | "due" | "hard" | "random">("mixed");
+  const [sessionSeed, setSessionSeed] = useState(() => `cards-${Date.now()}`);
   const [index, setIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const cards = useMemo(() => {
-    const source = kind === "kanji" ? content.kanji : kind === "vocabulary" ? content.vocabulary : content.grammar;
+    const source: FlashcardItem[] = kind === "kanji" ? content.kanji : kind === "vocabulary" ? content.vocabulary : content.grammar;
     const due = source.filter((item) => dueIds.includes(item.id));
-    return [...due, ...source].slice(0, 40);
-  }, [content, dueIds, kind]);
+    const hard = [...source].sort((a, b) => b.difficulty - a.difficulty);
+    if (deckMode === "due") return (due.length ? due : shuffleDeterministic(source, `${sessionSeed}-fallback`)).slice(0, 60);
+    if (deckMode === "hard") return shuffleDeterministic(hard.slice(0, Math.max(80, Math.floor(hard.length / 3))), sessionSeed).slice(0, 60);
+    if (deckMode === "random") return shuffleDeterministic(source, sessionSeed).slice(0, 60);
+    return [...due, ...shuffleDeterministic(source, sessionSeed)].filter((item, itemIndex, list) => list.findIndex((other) => other.id === item.id) === itemIndex).slice(0, 60);
+  }, [content, deckMode, dueIds, kind, sessionSeed]);
   const card = cards[index % Math.max(cards.length, 1)];
+
+  const resetDeck = (nextKind = kind, nextMode = deckMode) => {
+    setKind(nextKind);
+    setDeckMode(nextMode);
+    setIndex(0);
+    setRevealed(false);
+    setSessionSeed(`cards-${Date.now()}-${nextKind}-${nextMode}`);
+  };
 
   const rate = (rating: Rating) => {
     if (!card) return;
@@ -393,18 +409,31 @@ function LearnPage({ progress, content, onProgress }: { progress: AppProgress; c
     <section className="page-stack">
       <header className="page-header">
         <div>
-          <p className="eyebrow">Learn mode</p>
-          <h1>Short targeted flashcards</h1>
+          <p className="eyebrow">Flashcards</p>
+          <h1>Kanji, vocabulary, and grammar cards</h1>
+          <p>{content.kanji.length} kanji cards · {content.vocabulary.length} vocabulary cards · {content.grammar.length} grammar cards</p>
         </div>
-        <div className="segmented" role="group" aria-label="Card type">
-          {(["kanji", "vocabulary", "grammar"] as const).map((item) => (
-            <button key={item} className={kind === item ? "active" : ""} onClick={() => { setKind(item); setIndex(0); }}>{item}</button>
-          ))}
+        <div className="flashcard-controls">
+          <div className="segmented" role="group" aria-label="Card type">
+            {(["kanji", "vocabulary", "grammar"] as const).map((item) => (
+              <button key={item} className={kind === item ? "active" : ""} onClick={() => resetDeck(item, deckMode)}>{item}</button>
+            ))}
+          </div>
+          <div className="segmented" role="group" aria-label="Deck mode">
+            {(["mixed", "due", "hard", "random"] as const).map((item) => (
+              <button key={item} className={deckMode === item ? "active" : ""} onClick={() => resetDeck(kind, item)}>{item}</button>
+            ))}
+          </div>
+          <button onClick={() => resetDeck(kind, deckMode)}>Shuffle deck</button>
         </div>
       </header>
       {card ? (
         <article className="study-card">
-          <span className="day-pill">{index + 1} / {cards.length}</span>
+          <div className="card-meta">
+            <span className="day-pill">{index + 1} / {cards.length}</span>
+            <span className="day-pill">difficulty {card.difficulty}</span>
+            <span className="day-pill">{deckMode}</span>
+          </div>
           <CardFront card={card} />
           {revealed ? <CardBack card={card} /> : <button className="primary" onClick={() => setRevealed(true)}>Reveal answer</button>}
           <div className="rating-row">
@@ -418,13 +447,13 @@ function LearnPage({ progress, content, onProgress }: { progress: AppProgress; c
   );
 }
 
-function CardFront({ card }: { card: GrammarItem | VocabularyItem | StudyContent["kanji"][number] }) {
+function CardFront({ card }: { card: FlashcardItem }) {
   if ("pattern" in card) return <><h2>{card.pattern}</h2><p>{card.meaning}</p></>;
   if ("word" in card) return <><h2 className="jp">{card.word}</h2><p>{card.partOfSpeech}</p></>;
   return <><h2 className="jp mega">{card.kanji}</h2><p>{card.meaning}</p></>;
 }
 
-function CardBack({ card }: { card: GrammarItem | VocabularyItem | StudyContent["kanji"][number] }) {
+function CardBack({ card }: { card: FlashcardItem }) {
   if ("pattern" in card) {
     return (
       <div className="answer-block">

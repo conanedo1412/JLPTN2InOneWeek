@@ -44,6 +44,8 @@ export function validateContent(content: Partial<StudyContent>): ValidationIssue
     if (uniqueChoices.size !== question.choices.length) issues.push({ message: `Question ${question.id} has duplicate answer choices.` });
     if (!question.choices.includes(question.correctAnswer)) issues.push({ message: `Question ${question.id} is missing its correct answer from choices.` });
     if (!question.explanation) issues.push({ message: `Question ${question.id} has an empty explanation.` });
+    const quizText = [question.prompt, question.correctAnswer, question.explanation, ...question.choices].join(" ");
+    if (/[A-Za-z]/.test(quizText)) issues.push({ message: `Question ${question.id} contains English letters in quiz-facing text.` });
     if (!contentIds.has(question.relatedContentId)) issues.push({ message: `Question ${question.id} references a content item that does not exist.` });
     if (question.difficulty < 1 || question.difficulty > 5) issues.push({ message: `Question ${question.id} has invalid difficulty.` });
   });

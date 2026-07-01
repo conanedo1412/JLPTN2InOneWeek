@@ -380,6 +380,18 @@ small,
   gap: 1rem;
 }
 
+.flashcard-controls,
+.card-meta {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.card-meta {
+  justify-content: flex-start;
+}
+
 .answer-block {
   background: var(--surface-2);
   border-radius: 8px;
