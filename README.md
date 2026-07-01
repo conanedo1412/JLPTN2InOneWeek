@@ -1,6 +1,6 @@
 # JLPT N2 Five-Day Intensive
 
-A lightweight offline-first React PWA for someone who is already close to passing JLPT N2 and has five serious preparation days left. It focuses on kanji, vocabulary, grammar distinctions, sentence ordering, timed mixed practice, and personal mistake recovery.
+A lightweight offline-first React PWA to help Audrey, or any near-passing JLPT N2 learner, make the most of one final week. It focuses on kanji, vocabulary, grammar distinctions, sentence ordering, timed mixed practice, and personal mistake recovery.
 
 The bundled questions are original JLPT-style practice material. They are not official JLPT questions and are not copied from commercial prep books.
 
