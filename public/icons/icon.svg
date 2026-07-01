@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="JLPT N2 study app icon">
+  <rect width="512" height="512" rx="96" fill="#1b4d4a"/>
+  <circle cx="383" cy="137" r="54" fill="#f0b35b"/>
+  <path d="M102 132h196v42H102zm0 88h308v42H102zm0 88h220v42H102z" fill="#f7f6f1"/>
+  <path d="M301 319c32 0 58 26 58 58s-26 58-58 58-58-26-58-58 26-58 58-58zm0 31c-15 0-27 12-27 27s12 27 27 27 27-12 27-27-12-27-27-27z" fill="#8fc8bd"/>
+  <path d="M99 397h108v38H99z" fill="#f7f6f1"/>
+</svg>

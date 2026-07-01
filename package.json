@@ -1,0 +1,33 @@
+{
+  "name": "jlpt-n2-five-day-cram",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc -b && tsx scripts/validate-content.ts && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc -b",
+    "validate:content": "tsx scripts/validate-content.ts"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^6.0.7",
+    "vite-plugin-pwa": "^0.21.1",
+    "typescript": "^5.7.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "workbox-window": "^7.3.0"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "jsdom": "^25.0.1",
+    "tsx": "^4.19.2",
+    "vitest": "^2.1.8"
+  }
+}
