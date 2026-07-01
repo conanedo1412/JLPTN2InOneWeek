@@ -37,6 +37,7 @@ export function validateContent(content: Partial<StudyContent>): ValidationIssue
     ...(content.vocabulary ?? []).map((item) => item.id),
     ...(content.grammar ?? []).map((item) => item.id)
   ]);
+  const kanjiById = new Map((content.kanji ?? []).map((item) => [item.id, item]));
   content.questions?.forEach((question) => {
     addId(question.id, "Question");
     const uniqueChoices = new Set(question.choices);
@@ -47,6 +48,13 @@ export function validateContent(content: Partial<StudyContent>): ValidationIssue
     const quizText = [question.prompt, question.correctAnswer, question.explanation, ...question.choices].join(" ");
     if (/[A-Za-z]/.test(quizText)) issues.push({ message: `Question ${question.id} contains English letters in quiz-facing text.` });
     if (!contentIds.has(question.relatedContentId)) issues.push({ message: `Question ${question.id} references a content item that does not exist.` });
+    const relatedKanji = kanjiById.get(question.relatedContentId);
+    if (relatedKanji && question.subcategory === "kanji-reading" && !relatedKanji.readings.includes(question.correctAnswer)) {
+      issues.push({ message: `Question ${question.id} uses a reading that is not listed for ${relatedKanji.kanji}.` });
+    }
+    if (relatedKanji && question.subcategory === "kanji-meaning" && question.correctAnswer !== relatedKanji.kanji && question.choices.includes(relatedKanji.kanji)) {
+      issues.push({ message: `Question ${question.id} should answer with related kanji ${relatedKanji.kanji}.` });
+    }
     if (question.difficulty < 1 || question.difficulty > 5) issues.push({ message: `Question ${question.id} has invalid difficulty.` });
   });
   return issues;

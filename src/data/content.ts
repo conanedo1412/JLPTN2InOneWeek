@@ -482,7 +482,6 @@ const makeGrammar = (row: string, index: number): GrammarItem => {
 export const starterKanji = kanjiRows.map(makeKanji);
 export const starterVocabulary = vocabularyRows.map(makeVocabulary);
 export const starterGrammar = grammarRows.map(makeGrammar);
-export const allBundledKanji = [...starterKanji, ...expandedKanji];
 
 function choices(answer: string, pool: string[], seed: string, count = 4): string[] {
   const distractors = uniqueTake(shuffleDeterministic(pool.filter((item) => item && item !== answer), seed), count - 1);
@@ -500,6 +499,27 @@ function grammarLabel(item: GrammarItem): string {
     .replaceAll("なA", "な形容詞")
     .replaceAll("N", "名詞");
 }
+
+const commonReadingOverrides: Record<string, string> = {
+  脳: "ノウ",
+  王: "オウ"
+};
+
+function representativeKanjiReading(item: KanjiItem): string {
+  const override = commonReadingOverrides[item.kanji];
+  if (override) return override;
+  return item.readings.find((reading) => !reading.startsWith("-") && !reading.includes(".")) ?? item.readings[0];
+}
+
+function withRepresentativeReadingFirst(item: KanjiItem): KanjiItem {
+  const representative = representativeKanjiReading(item);
+  return {
+    ...item,
+    readings: [representative, ...item.readings.filter((reading) => reading !== representative)]
+  };
+}
+
+export const allBundledKanji = [...starterKanji, ...expandedKanji.map(withRepresentativeReadingFirst)];
 
 function buildQuestions(): QuizQuestion[] {
   const questions: QuizQuestion[] = [];
@@ -673,15 +693,16 @@ function buildExpandedKanjiQuestions(): QuizQuestion[] {
   const readingPool = expandedKanji.map((item) => item.readings[0]).filter(Boolean);
   const kanjiPool = japaneseOnlyChoicePool(expandedKanji, (item) => item.kanji);
   return questionKanji.flatMap((item, index) => {
+    const representativeReading = representativeKanjiReading(item);
     const readingQuestion: QuizQuestion = {
       id: `q-ekr-${String(index + 1).padStart(4, "0")}`,
       category: "kanji",
       subcategory: "kanji-reading",
       type: "multiple-choice",
       prompt: `「${item.kanji}」の読み方として正しいものを選びなさい。`,
-      choices: choices(item.readings[0], readingPool, `${item.id}-expanded-reading`),
-      correctAnswer: item.readings[0],
-      explanation: `「${item.kanji}」の主な読み：${item.readings.join("、")}`,
+      choices: choices(representativeReading, readingPool, `${item.id}-expanded-reading`),
+      correctAnswer: representativeReading,
+      explanation: `「${item.kanji}」の主な読み：${[representativeReading, ...item.readings.filter((reading) => reading !== representativeReading)].join("、")}`,
       relatedContentId: item.id,
       difficulty: item.difficulty,
       tags: item.tags
@@ -691,7 +712,7 @@ function buildExpandedKanjiQuestions(): QuizQuestion[] {
       category: "kanji",
       subcategory: "kanji-meaning",
       type: "multiple-choice",
-      prompt: `次の条件に合う漢字を選びなさい。\n読み：${item.readings[0]}\n画数：${item.tags.find((tag) => tag.startsWith("strokes-"))?.replace("strokes-", "") ?? "未確認"}`,
+      prompt: `次の条件に合う漢字を選びなさい。\n読み：${representativeReading}\n画数：${item.tags.find((tag) => tag.startsWith("strokes-"))?.replace("strokes-", "") ?? "未確認"}`,
       choices: choices(item.kanji, kanjiPool, `${item.id}-expanded-meaning`),
       correctAnswer: item.kanji,
       explanation: `正解は「${item.kanji}」。主な読み：${item.readings.join("、")}`,
