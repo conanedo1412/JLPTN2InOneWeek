@@ -1,5 +1,6 @@
 import type { GrammarItem, KanjiItem, QuizQuestion, StudyContent, VocabularyItem } from "../types";
 import { expandedKanji } from "./expandedKanji";
+import { extendedReading } from "./reading";
 import { shuffleDeterministic, uniqueTake } from "../utils/random";
 
 const kanjiRows = [
@@ -392,7 +393,7 @@ const grammarRows = [
   "せいで|because of|悪い結果の原因を示す。|普通形 + せいで|寝不足のせいで集中できない。|I cannot concentrate because of lack of sleep.|おかげで is positive.|Blame cause.|2|cause",
   "だけに|precisely because|理由が強く結果に結びつく。|普通形 + だけに|期待していただけに、残念だ。|Precisely because I expected it, I am disappointed.|からこそ is stronger positive emphasis.|Because exactly that.|3|cause",
   "だけでなく|not only but also|追加を示す。|普通形/名 + だけでなく|漢字だけでなく、文法も大切だ。|Not only kanji but grammar is important.|上に often stacks qualities.|Not only A, also B.|2|addition",
-  "たとえても|even if|仮定しても結果は変わらない。|たとえ + Vても/いAくても/なAでも|たとえ忙しくても、復習する。|Even if busy, I review.|ても alone is weaker.|Even if scenario.|2|condition",
+  "たとえ～ても|even if|仮定しても結果は変わらない。|たとえ + Vても/いAくても/なAでも|たとえ忙しくても、復習する。|Even if busy, I review.|ても alone is weaker.|Even if scenario.|2|condition",
   "たびに|every time|その時いつも同じことが起こる。|V辞書/名の + たびに|この曲を聞くたびに、学生時代を思い出す。|Every time I hear this song, I remember school days.|ごとに can mean regular interval.|Each occasion triggers.|2|time",
   "つつある|be in the process of|変化が進行中である。|Vます stem + つつある|状況は改善しつつある。|The situation is improving.|ている is general ongoing.|Formal gradual change.|3|progress",
   "つつ|while; though|同時動作または逆接を硬く言う。|Vます stem + つつ|悪いと知りつつ、続けてしまった。|Though I knew it was bad, I continued.|ながら is more common.|Knowing yet doing.|3|contrast",
@@ -513,8 +514,11 @@ function representativeKanjiReading(item: KanjiItem): string {
 
 function withRepresentativeReadingFirst(item: KanjiItem): KanjiItem {
   const representative = representativeKanjiReading(item);
+  const example = starterVocabulary.find(word => word.word.includes(item.kanji));
   return {
     ...item,
+    exampleCompound: example?.word ?? "",
+    exampleSentence: example?.exampleSentence ?? "",
     readings: [representative, ...item.readings.filter((reading) => reading !== representative)]
   };
 }
@@ -523,7 +527,7 @@ export const allBundledKanji = [...starterKanji, ...expandedKanji.map(withRepres
 
 function buildQuestions(): QuizQuestion[] {
   const questions: QuizQuestion[] = [];
-  starterKanji.slice(0, 50).forEach((item, index) => {
+  starterKanji.forEach((item, index) => {
     questions.push({
       id: `q-kr-${String(index + 1).padStart(3, "0")}`,
       category: "kanji",
@@ -553,7 +557,7 @@ function buildQuestions(): QuizQuestion[] {
       tags: item.tags
     });
   });
-  starterVocabulary.slice(0, 70).forEach((item, index) => {
+  starterVocabulary.forEach((item, index) => {
     questions.push({
       id: `q-vr-${String(index + 1).padStart(3, "0")}`,
       category: "vocabulary",
@@ -574,7 +578,7 @@ function buildQuestions(): QuizQuestion[] {
       category: "vocabulary",
       subcategory: "vocabulary-context",
       type: "fill-blank",
-      prompt: `説明とよく使う組み合わせを見て、最も自然な語を選びなさい。\n説明：${item.japaneseDefinition}\nよく使う形：${item.collocation}`,
+      prompt: `説明とよく使う組み合わせを見て、最も自然な語を選びなさい。\n説明：${item.japaneseDefinition}\nよく使う形：${item.collocation.replaceAll(item.word, "（　）")}`,
       choices: choices(item.word, starterVocabulary.map((v) => v.word), `${item.id}-context`),
       correctAnswer: item.word,
       explanation: `正解は「${item.word}」。例文：${item.exampleSentence}`,
@@ -583,7 +587,7 @@ function buildQuestions(): QuizQuestion[] {
       tags: item.tags
     });
   });
-  starterGrammar.slice(0, 40).forEach((item, index) => {
+  starterGrammar.forEach((item, index) => {
     questions.push({
       id: `q-gr-${String(index + 1).padStart(3, "0")}`,
       category: "grammar",
@@ -700,7 +704,7 @@ function buildExpandedKanjiQuestions(): QuizQuestion[] {
       subcategory: "kanji-reading",
       type: "multiple-choice",
       prompt: `「${item.kanji}」の読み方として正しいものを選びなさい。`,
-      choices: choices(representativeReading, readingPool, `${item.id}-expanded-reading`),
+      choices: choices(representativeReading, readingPool.filter(reading => !item.readings.includes(reading)), `${item.id}-expanded-reading`),
       correctAnswer: representativeReading,
       explanation: `「${item.kanji}」の主な読み：${[representativeReading, ...item.readings.filter((reading) => reading !== representativeReading)].join("、")}`,
       relatedContentId: item.id,
@@ -713,7 +717,10 @@ function buildExpandedKanjiQuestions(): QuizQuestion[] {
       subcategory: "kanji-meaning",
       type: "multiple-choice",
       prompt: `次の条件に合う漢字を選びなさい。\n読み：${representativeReading}\n画数：${item.tags.find((tag) => tag.startsWith("strokes-"))?.replace("strokes-", "") ?? "未確認"}`,
-      choices: choices(item.kanji, kanjiPool, `${item.id}-expanded-meaning`),
+      choices: choices(item.kanji, kanjiPool.filter(kanji => {
+        const other = expandedKanji.find(entry => entry.kanji === kanji)!;
+        return !other.readings.includes(representativeReading) || other.tags.find(tag => tag.startsWith("strokes-")) !== item.tags.find(tag => tag.startsWith("strokes-"));
+      }), `${item.id}-expanded-meaning`),
       correctAnswer: item.kanji,
       explanation: `正解は「${item.kanji}」。主な読み：${item.readings.join("、")}`,
       relatedContentId: item.id,
@@ -724,7 +731,7 @@ function buildExpandedKanjiQuestions(): QuizQuestion[] {
   });
 }
 
-export const starterQuestions = [...buildQuestions(), ...buildExpandedKanjiQuestions()];
+export const starterQuestions = [...buildQuestions(), ...buildExpandedKanjiQuestions(), ...extendedReading];
 
 export const starterContent: StudyContent = {
   kanji: allBundledKanji,

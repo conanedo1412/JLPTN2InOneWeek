@@ -78,7 +78,7 @@ export interface StudyContent {
 export interface SetupInfo {
   examDate: string;
   dailyMinutes: 30 | 60 | 90 | 120;
-  activeDay: 1 | 2 | 3 | 4 | 5;
+  activeDay: number;
   completedDays: number[];
 }
 

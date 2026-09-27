@@ -20,9 +20,21 @@ export function selectQuestions(
     if (options.subcategories && !options.subcategories.includes(q.subcategory)) return false;
     return true;
   });
-  const pool = [...filtered.filter((q) => weighted.has(q.id)), ...filtered];
-  const deduped = Array.from(new Map(pool.map((q) => [q.id, q])).values());
-  return shuffleDeterministic(deduped, options.seed).slice(0, options.count);
+  const deduped = Array.from(new Map(filtered.map((q) => [q.id, q])).values());
+  return [
+    ...shuffleDeterministic(deduped.filter((q) => weighted.has(q.id)), options.seed),
+    ...shuffleDeterministic(deduped.filter((q) => !weighted.has(q.id)), options.seed)
+  ].slice(0, options.count);
+}
+
+export function balancedPractice(questions: QuizQuestion[], count: number, seed: string): QuizQuestion[] {
+  const groups: StudyCategory[][] = [["kanji"], ["vocabulary"], ["grammar", "sentence-ordering"], ["reading"]];
+  const pools = groups.map((categories, i) => selectQuestions(questions, { count, seed: `${seed}-${i}`, categories }));
+  const selected: QuizQuestion[] = [];
+  for (let i = 0; selected.length < count && i < count; i++) {
+    for (const pool of pools) if (pool[i] && selected.length < count) selected.push(pool[i]);
+  }
+  return selected;
 }
 
 export function validateSentenceOrder(selected: string, correct: string): boolean {

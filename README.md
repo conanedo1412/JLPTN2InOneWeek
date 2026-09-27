@@ -1,6 +1,8 @@
-# JLPT N2 Five-Day Intensive
+# N2 Quest: 30-Day Adventure
 
-A lightweight offline-first React PWA to help Audrey, or any near-passing JLPT N2 learner, make the most of one final week. It focuses on kanji, vocabulary, grammar distinctions, sentence ordering, timed mixed practice, and personal mistake recovery.
+A local-first React PWA for a month of N2 preparation: kanji, vocabulary, grammar, sentence ordering, reading, and mistake recovery. Best suited to learners already studying around N2 level, not beginners.
+
+The goal is 90/120 across language knowledge and reading, but practice accuracy is not an official scaled JLPT score and completing this course cannot guarantee a result. Listening is deliberately excluded from the course; passing the actual JLPT still requires listening and the official section minimums. Supplement this finite practice bank with unseen official sample questions and full-length practice exams.
 
 The bundled questions are original JLPT-style practice material. They are not official JLPT questions and are not copied from commercial prep books.
 
@@ -25,9 +27,13 @@ Open the Vite URL printed by `pnpm run dev`.
 ## What Is Included
 
 - First-run setup with exam date and daily study time
-- Five-day adaptive study plan
+- Thirty-day campaign with five six-day chapters and checkpoint trials
+- Persistent XP, levels, daily question goals, badges, and per-skill evidence
+- XP counts each question's best performance once; task checkboxes do not award XP
 - Diagnostic, quick review, weak-area practice, and timed quiz modes
-- Flashcard mode with shuffled kanji, vocabulary, and grammar decks
+- Daily flashcard curriculum covering the bank over 24 days, followed by six review days; shuffled and due decks remain available
+- Original multi-paragraph reading, paired opinions, and information-retrieval exercises
+- Balanced mixed quizzes and Japanese-only quiz controls, questions, and feedback
 - Mistake log with filters and corrected status
 - Local progress storage with corrupted-data recovery
 - JSON content import, CSV vocabulary import, progress export/import, and reset
@@ -41,7 +47,9 @@ Open the Vite URL printed by `pnpm run dev`.
 pnpm run validate:content
 ```
 
-The validator checks duplicate IDs, duplicate choices, missing correct answers, broken content references, empty explanations, required fields, difficulty values, and minimum starter content counts.
+The validator checks duplicate IDs, duplicate choices, missing correct answers, multiple valid kanji readings among choices, broken content references, quiz-facing English, empty explanations, required fields, difficulty values, and minimum starter content counts. These structural checks do not replace expert editorial review of every item.
+
+Existing answers, flashcard reviews, settings, and XP evidence remain in the original browser storage key. Old five-day task checkmarks are retained but do not count toward the new campaign. Reviews follow the selected study day. Daily task checkboxes are self-reported; skill accuracy uses the latest attempt per question (up to 50 unique questions per skill), not task completion.
 
 ## Bundled Study Bank
 

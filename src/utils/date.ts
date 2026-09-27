@@ -31,5 +31,5 @@ export function daysBetweenLocal(from: string, to: string): number {
 }
 
 export function defaultExamDate(): string {
-  return addLocalDays(todayLocal(), 7);
+  return addLocalDays(todayLocal(), 30);
 }

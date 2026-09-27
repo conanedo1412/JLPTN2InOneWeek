@@ -1,14 +1,14 @@
 import type { AnswerRecord, MistakeRecord, Subcategory, WeakArea } from "../../types";
 
 export const subcategoryLabels: Record<Subcategory, string> = {
-  "kanji-meaning": "Kanji meaning",
-  "kanji-reading": "Kanji reading",
-  "vocabulary-recognition": "Vocabulary recognition",
-  "vocabulary-context": "Vocabulary in context",
-  "grammar-recognition": "Grammar recognition",
-  "grammar-nuance": "Grammar nuance",
-  "sentence-ordering": "Sentence ordering",
-  "short-reading": "Short reading/context"
+  "kanji-meaning": "漢字の識別",
+  "kanji-reading": "漢字の読み",
+  "vocabulary-recognition": "語彙の意味",
+  "vocabulary-context": "文脈と語彙",
+  "grammar-recognition": "文法の意味",
+  "grammar-nuance": "文法の使い分け",
+  "sentence-ordering": "文の組み立て",
+  "short-reading": "読解"
 };
 
 export const allSubcategories = Object.keys(subcategoryLabels) as Subcategory[];

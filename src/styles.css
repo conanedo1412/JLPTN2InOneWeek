@@ -1,6 +1,6 @@
 :root {
   color-scheme: light;
-  --bg: #f7f6f1;
+  --bg: #f4f7fa;
   --surface: #ffffff;
   --surface-2: #eef5f2;
   --text: #1b2626;
@@ -39,7 +39,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  min-width: 320px;
+  min-width: 0;
 }
 
 button,
@@ -573,6 +573,46 @@ small,
   .bar-row {
     grid-template-columns: 1fr;
   }
+}
+
+.campaign { padding-block: 1.25rem; border-block: 1px solid var(--line); }
+.campaign h2 { font-size: 1.4rem; margin: 1rem 0; }
+.adventurer { display: grid; grid-template-columns: 72px minmax(0, 1fr) minmax(180px, 0.7fr); align-items: center; gap: 1.25rem; }
+.adventurer h2 { font-size: 2rem; margin: 0.2rem 0; }
+.adventurer img { width: 72px; height: 72px; }
+progress { display: block; width: 100%; height: 12px; margin: 0.7rem 0; accent-color: var(--primary-2); }
+.daily-quest { border-left: 3px solid var(--gold); padding-left: 1rem; display: grid; gap: 0.3rem; }
+.chapter-map { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-block: 1.5rem; }
+.chapter-map h3 { font-size: 0.95rem; }
+.chapter-map h3 span { color: var(--muted); margin-right: 0.25rem; }
+.day-nodes { display: grid; grid-template-columns: repeat(3, 44px); gap: 8px; }
+.day-nodes button { width: 44px; height: 44px; padding: 0; border-radius: 50%; }
+.day-nodes .trial { border-radius: 5px; border: 2px solid var(--gold); }
+.day-nodes .cleared { background: var(--surface-2); color: var(--primary); }
+.day-nodes [aria-current="step"] { background: var(--primary); color: var(--bg); outline: 2px solid var(--gold); outline-offset: 3px; }
+.skill-tracks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1.25rem; padding-block: 1.25rem; border-block: 1px solid var(--line); }
+.skill-tracks span { display: block; margin-top: 0.3rem; }
+.skill-tracks > div:nth-child(2) progress { accent-color: #3b78ba; }
+.skill-tracks > div:nth-child(3) progress { accent-color: #ba4870; }
+.skill-tracks > div:nth-child(4) progress { accent-color: #a47b16; }
+.badges { display: flex; flex-wrap: wrap; gap: 1.2rem; padding-block: 1rem; }
+.badges > div { border-left: 3px solid var(--line); padding-left: 0.7rem; max-width: 230px; }
+.badges .earned { border-color: var(--gold); }
+.badges small { display: block; margin-top: 0.35rem; color: var(--muted); }
+.campaign small { font-size: 0.8rem; }
+.task-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.7rem; align-items: center; }
+.task-row > span { min-width: 0; }
+.question-card h2 { white-space: pre-line; font-size: 1.15rem; line-height: 1.95; }
+.campaign, .skill-tracks > div, .content, .page-header > div { min-width: 0; }
+@media (max-width: 600px) {
+  .adventurer { grid-template-columns: 56px minmax(0, 1fr); gap: 1rem; }
+  .adventurer img { width: 56px; height: 56px; }
+  .daily-quest { grid-column: 1 / -1; }
+  .skill-tracks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .chapter-map { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .day-nodes { grid-template-columns: repeat(3, minmax(0, 44px)); gap: 5px; }
+  .day-nodes button { width: 100%; }
+  .task-row { flex-wrap: wrap; }
 }
 
 @media (prefers-reduced-motion: reduce) {

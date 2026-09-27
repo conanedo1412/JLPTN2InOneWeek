@@ -35,7 +35,7 @@ for (const [level, kanjiList] of levelLists) {
 
 const details = await mapLimit(ordered, 12, async (kanji) => {
   const data = await fetchJson(`${endpoint}/${encodeURIComponent(kanji)}`);
-  const readings = [...(data.on_readings ?? []), ...(data.kun_readings ?? [])].slice(0, 4);
+  const readings = [...(data.on_readings ?? []), ...(data.kun_readings ?? [])];
   return {
     kanji: data.kanji,
     readings: readings.length ? readings : ["reading varies"],

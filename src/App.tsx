@@ -1,18 +1,20 @@
-import { Component, type ErrorInfo, type ReactNode, useEffect, useMemo, useState } from "react";
+import { Component, type ErrorInfo, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { starterContent } from "./data/content";
 import { dueReviewIds, scheduleReview } from "./features/learn/scheduler";
 import { updateMistakes } from "./features/mistakes/mistakeLogic";
-import { makeAnswerRecord, selectQuestions } from "./features/quiz/quizLogic";
+import { balancedPractice, makeAnswerRecord, selectQuestions } from "./features/quiz/quizLogic";
+import { Campaign } from "./features/progress/CampaignDashboard";
+import { campaignStats } from "./features/progress/campaign";
 import { accuraciesBySubcategory, calculateWeakAreas, easyMaterialWarning, overallCompletion, subcategoryLabels } from "./features/progress/scoring";
-import { createDefaultSetup, fiveDayPlan, getDayPlan } from "./features/study-plan/plan";
+import { chapters, createDefaultSetup, monthPlan, getDayPlan } from "./features/study-plan/plan";
 import { emptyProgress, loadProgress, saveProgress } from "./storage/progressStorage";
 import { exportProgress, importProgress, parseContentJson, parseVocabularyCsv, validateContent } from "./services/importExport";
 import type { AppProgress, Confidence, GrammarItem, QuizQuestion, Rating, StudyCategory, StudyContent, Subcategory, VocabularyItem } from "./types";
-import { addLocalDays, daysBetweenLocal, todayLocal } from "./utils/date";
+import { daysBetweenLocal, todayLocal } from "./utils/date";
 import { shuffleDeterministic } from "./utils/random";
 
 type Page = "today" | "learn" | "quiz" | "mistakes" | "progress" | "settings";
-type QuizPreset = "diagnostic" | "quick" | "weak" | "timed" | "kanji" | "vocab" | "grammar" | "final";
+type QuizPreset = "diagnostic" | "quick" | "weak" | "timed" | "kanji" | "vocab" | "grammar" | "reading" | "final";
 type FlashcardItem = GrammarItem | VocabularyItem | StudyContent["kanji"][number];
 
 const navItems: { page: Page; label: string }[] = [
@@ -72,6 +74,12 @@ export default function App() {
   const [toast, setToast] = useState("");
   const content = useMemo(() => mergeContent(progress), [progress]);
   const setup = progress.setup;
+  const level = campaignStats(progress).level;
+  const previousLevel = useRef(level);
+  useEffect(() => {
+    if (level > previousLevel.current) setToast(`レベルアップ！レベル${level}に到達しました。`);
+    previousLevel.current = level;
+  }, [level]);
 
   useEffect(() => {
     const update = () => setToast("An update is available.");
@@ -92,8 +100,8 @@ export default function App() {
 
   const weakAreas = useMemo(() => calculateWeakAreas(progress.answers, progress.mistakes), [progress.answers, progress.mistakes]);
   const accuracies = useMemo(() => accuraciesBySubcategory(progress.answers), [progress.answers]);
-  const totalTasks = fiveDayPlan.reduce((sum, day) => sum + day.tasks.length, 0);
-  const completion = overallCompletion(progress.completedTasks, totalTasks);
+  const totalTasks = monthPlan.reduce((sum, day) => sum + day.tasks.length, 0);
+  const completion = overallCompletion(progress.completedTasks.filter(id => id.startsWith("month-")), totalTasks);
 
   if (!setup) {
     return (
@@ -117,8 +125,8 @@ export default function App() {
           <div className="brand">
             <span className="brand-mark" aria-hidden="true">N2</span>
             <div>
-              <strong>Five-Day Intensive</strong>
-              <span>JLPT N2 cram plan</span>
+              <strong>N2 Quest</strong>
+              <span>The 30-day adventure</span>
             </div>
           </div>
           <nav aria-label="Main navigation">
@@ -139,6 +147,7 @@ export default function App() {
               accuracies={accuracies}
               completion={completion}
               onStartQuiz={startQuiz}
+              onNavigate={setPage}
               onTaskToggle={(taskId) =>
                 updateProgress((current) => ({
                   ...current,
@@ -200,7 +209,7 @@ export default function App() {
         {toast && (
           <div className="toast" role="status">
             <span>{toast}</span>
-            {toast.includes("update") ? <button onClick={() => window.location.reload()}>Reload</button> : <button onClick={() => setToast("")}>OK</button>}
+            {toast.includes("update") ? <button onClick={() => window.dispatchEvent(new Event("pwa-apply-update"))}>Update now</button> : <button onClick={() => setToast("")}>OK</button>}
           </div>
         )}
       </div>
@@ -216,10 +225,10 @@ function SetupPage({ onComplete }: { onComplete: (setup: NonNullable<AppProgress
     <main className="setup-shell">
       <section className="setup-hero">
         <div>
-          <p className="eyebrow">JLPT N2 final-week plan</p>
-          <h1>You are very close to passing.</h1>
+          <p className="eyebrow">JLPT N2 · 30 days</p>
+          <h1>N2 Quest</h1>
           <p>
-            This five-day plan focuses on finding and correcting the mistakes costing you the final few points.
+            A month of kanji, vocabulary, grammar, and reading. Build your skills one day at a time.
           </p>
         </div>
       </section>
@@ -253,10 +262,10 @@ function SetupPage({ onComplete }: { onComplete: (setup: NonNullable<AppProgress
           </fieldset>
           <button className="primary" type="submit">Start dashboard</button>
         </form>
-        <div className="plan-list" aria-label="Five available study days">
-          {fiveDayPlan.map((day) => (
-            <article className="panel compact" key={day.day}>
-              <span className="day-pill">Day {day.day}</span>
+        <div className="plan-list" aria-label="Five chapters">
+          {chapters.map((day, index) => (
+            <article className="panel compact" key={day.title}>
+              <span className="day-pill">Days {index * 6 + 1}–{index * 6 + 6}</span>
               <h3>{day.title}</h3>
               <p>{day.intent}</p>
             </article>
@@ -274,6 +283,7 @@ function TodayPage({
   accuracies,
   completion,
   onStartQuiz,
+  onNavigate,
   onTaskToggle,
   onSetupChange
 }: {
@@ -283,6 +293,7 @@ function TodayPage({
   accuracies: Record<Subcategory, number>;
   completion: number;
   onStartQuiz: (preset: QuizPreset) => void;
+  onNavigate: (page: Page) => void;
   onTaskToggle: (taskId: string) => void;
   onSetupChange: (setup: Partial<NonNullable<AppProgress["setup"]>>) => void;
 }) {
@@ -294,7 +305,7 @@ function TodayPage({
   const vocabAccuracy = Math.round(((accuracies["vocabulary-recognition"] || 0) + (accuracies["vocabulary-context"] || 0)) / 2);
   const grammarAccuracy = Math.round(((accuracies["grammar-recognition"] || 0) + (accuracies["grammar-nuance"] || 0)) / 2);
   const activeWeak = weakAreas.filter((w) => w.score > 0).slice(0, 4);
-  const continuePreset: QuizPreset = setup.activeDay === 1 ? "diagnostic" : setup.activeDay === 5 ? "final" : "weak";
+  const continuePreset: QuizPreset = setup.activeDay === 1 ? "diagnostic" : setup.activeDay % 6 === 0 ? "final" : "weak";
 
   return (
     <section className="page-stack">
@@ -307,17 +318,18 @@ function TodayPage({
         <div className="header-controls">
           <label>
             Active day
-            <select value={setup.activeDay} onChange={(event) => onSetupChange({ activeDay: Number(event.target.value) as 1 | 2 | 3 | 4 | 5 })}>
-              {[1, 2, 3, 4, 5].map((day) => <option key={day} value={day}>Day {day}</option>)}
+            <select value={setup.activeDay} onChange={(event) => onSetupChange({ activeDay: Number(event.target.value) })}>
+              {monthPlan.map(({ day }) => <option key={day} value={day}>Day {day}</option>)}
             </select>
           </label>
         </div>
       </header>
 
       {warning && <div className="notice" role="status">{warning}</div>}
+      <Campaign progress={progress} onDay={activeDay => onSetupChange({ activeDay })} />
 
       <div className="metric-grid">
-        <Metric label="Days to exam" value={daysRemaining < 0 ? "Exam passed" : `${daysRemaining}`} />
+        <Metric label="Days to exam" value={daysRemaining < 0 ? "Date elapsed" : `${daysRemaining}`} />
         <Metric label="Estimated study" value={`${setup.dailyMinutes} min`} />
         <Metric label="Overall complete" value={`${completion}%`} />
         <Metric label="Mistakes waiting" value={`${progress.mistakes.filter((m) => !m.corrected).length}`} />
@@ -339,13 +351,14 @@ function TodayPage({
           <h2>Today's tasks</h2>
           <div className="task-list">
             {plan.tasks.map((task) => (
-              <label className="task-row" key={task.id}>
-                <input type="checkbox" checked={progress.completedTasks.includes(task.id)} onChange={() => onTaskToggle(task.id)} />
+              <div className="task-row" key={task.id}>
+                <input aria-label={`Complete ${task.title}`} type="checkbox" checked={progress.completedTasks.includes(task.id)} onChange={() => onTaskToggle(task.id)} />
                 <span>
                   <strong>{task.title}</strong>
-                  <small>{task.minutes} min · {task.focus}</small>
+                  <small>{Math.round(task.minutes * setup.dailyMinutes / 90)} min · {task.focus}</small>
                 </span>
-              </label>
+                <button onClick={() => task.mode === "learn" ? onNavigate("learn") : task.mode === "mistakes" ? onNavigate("mistakes") : onStartQuiz(task.id.endsWith("reading") ? "reading" : task.mode === "diagnostic" ? "diagnostic" : task.mode === "timed" ? "final" : (["kanji", "vocab", "grammar", "grammar", "reading", "weak"] as QuizPreset[])[(setup.activeDay - 1) % 6])}>Start</button>
+              </div>
             ))}
           </div>
         </div>
@@ -369,9 +382,10 @@ function TodayPage({
 
 function LearnPage({ progress, content, onProgress }: { progress: AppProgress; content: StudyContent; onProgress: (recipe: (current: AppProgress) => AppProgress) => void }) {
   const setup = progress.setup!;
-  const dueIds = dueReviewIds(progress.review, setup.activeDay);
+  const [reviewSnapshot, setReviewSnapshot] = useState(progress.review);
+  const dueIds = useMemo(() => dueReviewIds(reviewSnapshot, setup.activeDay), [reviewSnapshot, setup.activeDay]);
   const [kind, setKind] = useState<"kanji" | "vocabulary" | "grammar">("kanji");
-  const [deckMode, setDeckMode] = useState<"mixed" | "due" | "hard" | "random">("mixed");
+  const [deckMode, setDeckMode] = useState<"daily" | "mixed" | "due" | "hard" | "random">("daily");
   const [sessionSeed, setSessionSeed] = useState(() => `cards-${Date.now()}`);
   const [index, setIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
@@ -379,15 +393,22 @@ function LearnPage({ progress, content, onProgress }: { progress: AppProgress; c
     const source: FlashcardItem[] = kind === "kanji" ? content.kanji : kind === "vocabulary" ? content.vocabulary : content.grammar;
     const due = source.filter((item) => dueIds.includes(item.id));
     const hard = [...source].sort((a, b) => b.difficulty - a.difficulty);
-    if (deckMode === "due") return (due.length ? due : shuffleDeterministic(source, `${sessionSeed}-fallback`)).slice(0, 60);
+    if (deckMode === "daily") {
+      const chunk = Math.ceil(source.length / 24);
+      const day = Math.min(setup.activeDay, 24) - 1;
+      const newCards = setup.activeDay <= 24 ? source.slice(day * chunk, (day + 1) * chunk) : [];
+      return [...newCards, ...due].filter((item, i, list) => list.findIndex(other => other.id === item.id) === i);
+    }
+    if (deckMode === "due") return due.slice(0, 60);
     if (deckMode === "hard") return shuffleDeterministic(hard.slice(0, Math.max(80, Math.floor(hard.length / 3))), sessionSeed).slice(0, 60);
     if (deckMode === "random") return shuffleDeterministic(source, sessionSeed).slice(0, 60);
     return [...due, ...shuffleDeterministic(source, sessionSeed)].filter((item, itemIndex, list) => list.findIndex((other) => other.id === item.id) === itemIndex).slice(0, 60);
-  }, [content, deckMode, dueIds, kind, sessionSeed]);
-  const card = cards[index % Math.max(cards.length, 1)];
+  }, [content, deckMode, dueIds, kind, sessionSeed, setup.activeDay]);
+  const card = cards[index];
 
   const resetDeck = (nextKind = kind, nextMode = deckMode) => {
     setKind(nextKind);
+    setReviewSnapshot(progress.review);
     setDeckMode(nextMode);
     setIndex(0);
     setRevealed(false);
@@ -420,7 +441,7 @@ function LearnPage({ progress, content, onProgress }: { progress: AppProgress; c
             ))}
           </div>
           <div className="segmented" role="group" aria-label="Deck mode">
-            {(["mixed", "due", "hard", "random"] as const).map((item) => (
+            {(["daily", "mixed", "due", "hard", "random"] as const).map((item) => (
               <button key={item} className={deckMode === item ? "active" : ""} onClick={() => resetDeck(kind, item)}>{item}</button>
             ))}
           </div>
@@ -442,21 +463,22 @@ function LearnPage({ progress, content, onProgress }: { progress: AppProgress; c
             ))}
           </div>
         </article>
-      ) : <div className="panel">No cards are available.</div>}
+      ) : <div className="panel"><h2>{cards.length ? "Deck complete" : "No cards due"}</h2><p>{index} cards reviewed in this session.</p><button onClick={() => resetDeck(kind, deckMode)}>Start another deck</button></div>}
     </section>
   );
 }
 
 function CardFront({ card }: { card: FlashcardItem }) {
-  if ("pattern" in card) return <><h2>{card.pattern}</h2><p>{card.meaning}</p></>;
+  if ("pattern" in card) return <h2>{card.pattern}</h2>;
   if ("word" in card) return <><h2 className="jp">{card.word}</h2><p>{card.partOfSpeech}</p></>;
-  return <><h2 className="jp mega">{card.kanji}</h2><p>{card.meaning}</p></>;
+  return <h2 className="jp mega">{card.kanji}</h2>;
 }
 
 function CardBack({ card }: { card: FlashcardItem }) {
   if ("pattern" in card) {
     return (
       <div className="answer-block">
+        <p>{card.meaning}</p>
         <p><strong>Formation:</strong> {card.formation}</p>
         <p className="jp">{card.example}</p>
         <p>{card.translation}</p>
@@ -478,9 +500,10 @@ function CardBack({ card }: { card: FlashcardItem }) {
   }
   return (
     <div className="answer-block">
+      <p>{card.meaning}</p>
       <p><strong>Reading:</strong> <span className="jp">{card.readings.join("、")}</span></p>
       <p className="jp">{card.exampleSentence}</p>
-      <p><strong>Tags:</strong> {card.tags.join(", ")}</p>
+        <p><strong>Tags:</strong> {card.tags.join(", ")}</p>
     </div>
   );
 }
@@ -502,40 +525,43 @@ function QuizPage({
 }) {
   const setup = progress.setup!;
   const [duration, setDuration] = useState(20);
-  const weightedIds = progress.mistakes.filter((m) => !m.corrected || m.guessedCorrectly).map((m) => m.questionId);
-  const weakSubs = weakAreas.filter((w) => w.label === "weak" || w.label === "critical").map((w) => w.subcategory);
+  const [sessionSeed, setSessionSeed] = useState(() => `${Date.now()}`);
+  const [weightedIds] = useState(() => progress.mistakes.filter((m) => !m.corrected || m.guessedCorrectly).map((m) => m.questionId));
+  const [weakSubs] = useState(() => weakAreas.filter((w) => w.label === "weak" || w.label === "critical").map((w) => w.subcategory));
   const questions = useMemo(() => {
-    if (preset === "diagnostic") return balancedDiagnostic(content.questions, `${todayLocal()}-diagnostic`);
-    if (preset === "quick") return quickReview(content.questions, weakSubs, todayLocal());
-    if (preset === "kanji") return selectQuestions(content.questions, { count: 20, seed: "kanji", categories: ["kanji"], weightedIds });
-    if (preset === "vocab") return selectQuestions(content.questions, { count: 20, seed: "vocab", categories: ["vocabulary"], weightedIds });
-    if (preset === "grammar") return selectQuestions(content.questions, { count: 20, seed: "grammar", categories: ["grammar", "sentence-ordering"], weightedIds });
-    if (preset === "final") return selectQuestions(content.questions, { count: 45, seed: "final", weightedIds });
-    if (preset === "weak") return selectQuestions(content.questions, { count: 20, seed: `weak-${todayLocal()}`, subcategories: weakSubs.length ? weakSubs : undefined, weightedIds });
-    return selectQuestions(content.questions, { count: Math.max(10, duration), seed: `timed-${duration}-${todayLocal()}`, weightedIds });
-  }, [content.questions, duration, preset, weakSubs.join("|"), weightedIds.join("|")]);
+    if (preset === "diagnostic") return balancedDiagnostic(content.questions, sessionSeed);
+    if (preset === "quick") return balancedPractice(content.questions, 12, sessionSeed);
+    if (preset === "kanji") return selectQuestions(content.questions, { count: 20, seed: sessionSeed, categories: ["kanji"], weightedIds });
+    if (preset === "vocab") return selectQuestions(content.questions, { count: 20, seed: sessionSeed, categories: ["vocabulary"], weightedIds });
+    if (preset === "grammar") return selectQuestions(content.questions, { count: 20, seed: sessionSeed, categories: ["grammar", "sentence-ordering"], weightedIds });
+    if (preset === "reading") return selectQuestions(content.questions, { count: 6, seed: sessionSeed, categories: ["reading"], weightedIds });
+    if (preset === "final") return balancedPractice(content.questions, 48, sessionSeed);
+    if (preset === "weak") return selectQuestions(content.questions, { count: 20, seed: sessionSeed, subcategories: weakSubs.length ? weakSubs : undefined, weightedIds });
+    return balancedPractice(content.questions, Math.max(12, duration), sessionSeed);
+  }, [content.questions, duration, preset, sessionSeed, weakSubs, weightedIds]);
 
   return (
     <section className="page-stack">
       <header className="page-header">
         <div>
-          <p className="eyebrow">Quiz mode</p>
+          <p className="eyebrow">練習問題</p>
           <h1>{presetLabel(preset)}</h1>
         </div>
         <div className="toolbar">
-          <select value={preset} onChange={(event) => onPreset(event.target.value as QuizPreset)} aria-label="Quiz preset">
-            <option value="diagnostic">Diagnostic</option>
-            <option value="quick">Quick review</option>
-            <option value="weak">Weak areas</option>
-            <option value="timed">Timed mixed</option>
-            <option value="kanji">Kanji</option>
-            <option value="vocab">Vocabulary</option>
-            <option value="grammar">Grammar</option>
-            <option value="final">Final simulation</option>
+          <select value={preset} onChange={(event) => onPreset(event.target.value as QuizPreset)} aria-label="出題形式">
+            <option value="diagnostic">実力診断</option>
+            <option value="quick">短時間復習</option>
+            <option value="weak">弱点克服</option>
+            <option value="timed">時間制限あり</option>
+            <option value="kanji">漢字</option>
+            <option value="vocab">語彙</option>
+            <option value="grammar">文法</option>
+            <option value="reading">読解</option>
+            <option value="final">章末試験</option>
           </select>
           {preset === "timed" && (
-            <select value={duration} onChange={(event) => setDuration(Number(event.target.value))} aria-label="Timed session length">
-              {[10, 20, 30, 45].map((minutes) => <option key={minutes} value={minutes}>{minutes} minutes</option>)}
+            <select value={duration} onChange={(event) => setDuration(Number(event.target.value))} aria-label="制限時間">
+              {[10, 20, 30, 45].map((minutes) => <option key={minutes} value={minutes}>{minutes}分</option>)}
             </select>
           )}
         </div>
@@ -543,10 +569,11 @@ function QuizPage({
       <QuizSession
         key={`${preset}-${duration}-${questions.map((q) => q.id).join("-")}`}
         questions={questions}
-        timedMinutes={preset === "timed" || preset === "final" ? duration : undefined}
+        timedMinutes={preset === "final" ? 60 : preset === "timed" ? duration : undefined}
         activeDay={setup.activeDay}
         onComplete={onComplete}
       />
+      <button onClick={() => setSessionSeed(`${Date.now()}`)}>新しい問題に挑戦</button>
     </section>
   );
 }
@@ -587,6 +614,7 @@ function QuizSession({ questions, timedMinutes, activeDay, onComplete }: { quest
   }, [remaining]);
 
   const move = (next: number) => {
+    if (next === current) return;
     if (question) {
       setElapsed((currentElapsed) => ({
         ...currentElapsed,
@@ -598,14 +626,15 @@ function QuizSession({ questions, timedMinutes, activeDay, onComplete }: { quest
 
   const submit = () => {
     const unanswered = questions.filter((q) => !selected[q.id]);
-    if (unanswered.length && remaining !== 0 && !window.confirm(`${unanswered.length} questions are unanswered. Submit anyway?`)) return;
+    if (results) return;
+    if (unanswered.length && (!timedMinutes || remaining !== 0) && !window.confirm(`未回答が${unanswered.length}問あります。提出しますか。`)) return;
     const sessionId = `s-${startedAt}-${activeDay}`;
     const records = questions.map((q) =>
       makeAnswerRecord({
         question: q,
         selectedAnswer: selected[q.id] ?? "",
         confidence: confidence[q.id] ?? "unsure",
-        elapsedMs: elapsed[q.id] ?? Date.now() - startedAt,
+        elapsedMs: (elapsed[q.id] ?? 0) + (q.id === question?.id ? Date.now() - questionStartedAt : 0),
         sessionId,
         flagged: flags[q.id]
       })
@@ -614,7 +643,7 @@ function QuizSession({ questions, timedMinutes, activeDay, onComplete }: { quest
     onComplete(records);
   };
 
-  if (!question) return <div className="panel">No questions available for this session.</div>;
+  if (!question) return <div className="panel">該当する問題がありません。</div>;
 
   if (results) {
     const correctCount = results.filter((r) => r.correct).length;
@@ -622,19 +651,19 @@ function QuizSession({ questions, timedMinutes, activeDay, onComplete }: { quest
     const careless = results.filter((r) => !r.correct && r.elapsedMs < 12_000);
     return (
       <section className="panel">
-        <h2>Results</h2>
+        <h2>学習結果</h2>
         <div className="metric-grid small">
-          <Metric label="Score" value={`${correctCount}/${results.length}`} />
-          <Metric label="Slow correct" value={`${slowCorrect.length}`} />
-          <Metric label="Fast mistakes" value={`${careless.length}`} />
-          <Metric label="Guessed correct" value={`${results.filter((r) => r.correct && r.confidence === "guess").length}`} />
+          <Metric label="正解数" value={`${correctCount}/${results.length}`} />
+          <Metric label="時間のかかった正解" value={`${slowCorrect.length}`} />
+          <Metric label="急いで間違えた問題" value={`${careless.length}`} />
+          <Metric label="推測での正解" value={`${results.filter((r) => r.correct && r.confidence === "guess").length}`} />
         </div>
         <div className="result-list" aria-live="polite">
           {results.map((record, index) => (
             <article className="result-row" key={record.questionId}>
-              <strong>{index + 1}. {record.correct ? "Correct" : "Review"}</strong>
+              <strong>{index + 1}. {record.correct ? "正解" : "要復習"}</strong>
               <p>{questions[index].prompt}</p>
-              <small>Your answer: {record.selectedAnswer || "blank"} · Correct: {record.correctAnswer} · Confidence: {record.confidence}</small>
+              <small>回答：{record.selectedAnswer || "未回答"} · 正解：{record.correctAnswer} · 確信度：{confidenceLabel(record.confidence)}</small>
               <p>{questions[index].explanation}</p>
             </article>
           ))}
@@ -646,15 +675,19 @@ function QuizSession({ questions, timedMinutes, activeDay, onComplete }: { quest
   return (
     <section className="quiz-shell">
       <div className="quiz-topline">
-        <span>Question {current + 1} / {questions.length}</span>
+        <span>問題 {current + 1} / {questions.length}</span>
         {timedMinutes && <strong>{formatTime(remaining)}</strong>}
-        {timedMinutes && <button onClick={() => window.confirm("Pause the timer?") && setPaused((value) => !value)}>{paused ? "Resume" : "Pause"}</button>}
+        {timedMinutes && <button onClick={() => {
+          if (!paused && question) setElapsed(value => ({ ...value, [question.id]: (value[question.id] ?? 0) + Date.now() - questionStartedAt }));
+          setPaused(value => !value);
+          setQuestionStartedAt(Date.now());
+        }}>{paused ? "再開" : "一時停止"}</button>}
       </div>
-      <article className="question-card">
+      {paused ? <div className="panel">一時停止中</div> : <article className="question-card">
         <div className="question-meta">
           <span>{subcategoryLabels[question.subcategory]}</span>
           <button className={flags[question.id] ? "flagged" : ""} onClick={() => setFlags((value) => ({ ...value, [question.id]: !value[question.id] }))}>
-            {flags[question.id] ? "Flagged" : "Flag"}
+            {flags[question.id] ? "確認待ち" : "後で確認"}
           </button>
         </div>
         <h2>{question.prompt}</h2>
@@ -670,27 +703,27 @@ function QuizSession({ questions, timedMinutes, activeDay, onComplete }: { quest
           ))}
         </div>
         <fieldset className="confidence">
-          <legend>Confidence</legend>
+          <legend>確信度</legend>
           <div className="segmented">
             {(["sure", "unsure", "guess"] as const).map((item) => (
               <button type="button" key={item} className={(confidence[question.id] ?? "unsure") === item ? "active" : ""} onClick={() => setConfidence((value) => ({ ...value, [question.id]: item }))}>
-                {item}
+                {confidenceLabel(item)}
               </button>
             ))}
           </div>
         </fieldset>
-      </article>
-      <div className="quiz-nav">
-        <button onClick={() => move(current - 1)} disabled={current === 0}>Previous</button>
-        <div className="question-dots" aria-label="Question navigation">
+      </article>}
+      {!paused && <div className="quiz-nav">
+        <button onClick={() => move(current - 1)} disabled={current === 0}>前へ</button>
+        <div className="question-dots" aria-label="問題の移動">
           {questions.map((q, index) => (
             <button key={q.id} className={`${index === current ? "active" : ""} ${selected[q.id] ? "answered" : ""}`} onClick={() => move(index)}>
               {index + 1}
             </button>
           ))}
         </div>
-        {current === questions.length - 1 ? <button className="primary" onClick={submit}>Submit</button> : <button onClick={() => move(current + 1)}>Next</button>}
-      </div>
+        {current === questions.length - 1 ? <button className="primary" onClick={submit}>提出</button> : <button onClick={() => move(current + 1)}>次へ</button>}
+      </div>}
     </section>
   );
 }
@@ -776,7 +809,7 @@ function ProgressPage({ progress, weakAreas, accuracies }: { progress: AppProgre
         </div>
       </div>
       <section className="panel">
-        <h2>Day 5 must remember</h2>
+        <h2>Final chapter checklist</h2>
         <ul className="checklist">
           {[
             "Do not get stuck on one grammar question.",
@@ -827,7 +860,7 @@ function SettingsPage({ progress, content, onProgress }: { progress: AppProgress
         <section className="panel">
           <h2>Plan controls</h2>
           <label>Exam date<input type="date" value={setup.examDate} onChange={(event) => patchSetup({ examDate: event.target.value })} /></label>
-          <label>Active day<select value={setup.activeDay} onChange={(event) => patchSetup({ activeDay: Number(event.target.value) as 1 | 2 | 3 | 4 | 5 })}>{[1, 2, 3, 4, 5].map((day) => <option key={day} value={day}>Day {day}</option>)}</select></label>
+          <label>Active day<select value={setup.activeDay} onChange={(event) => patchSetup({ activeDay: Number(event.target.value) })}>{monthPlan.map(({ day }) => <option key={day} value={day}>Day {day}</option>)}</select></label>
           <label>Daily minutes<select value={setup.dailyMinutes} onChange={(event) => patchSetup({ dailyMinutes: Number(event.target.value) as 30 | 60 | 90 | 120 })}>{[30, 60, 90, 120].map((m) => <option key={m} value={m}>{m}</option>)}</select></label>
           <label>Theme<select value={progress.theme} onChange={(event) => onProgress({ ...progress, theme: event.target.value as AppProgress["theme"] })}><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
         </section>
@@ -887,14 +920,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 function calculateStreak(progress: AppProgress): number {
-  const days = new Set(progress.answers.map((answer) => answer.answeredAt.slice(0, 10)));
-  let date = todayLocal();
-  let streak = 0;
-  while (days.has(date)) {
-    streak += 1;
-    date = addLocalDays(date, -1);
-  }
-  return streak;
+  return campaignStats(progress).streak;
 }
 
 function balancedDiagnostic(questions: QuizQuestion[], seed: string): QuizQuestion[] {
@@ -902,26 +928,22 @@ function balancedDiagnostic(questions: QuizQuestion[], seed: string): QuizQuesti
   return subcategories.flatMap((subcategory) => selectQuestions(questions, { count: subcategory === "sentence-ordering" || subcategory === "short-reading" ? 5 : 6, seed: `${seed}-${subcategory}`, subcategories: [subcategory] })).slice(0, 46);
 }
 
-function quickReview(questions: QuizQuestion[], weakSubs: Subcategory[], seed: string): QuizQuestion[] {
-  return [
-    ...selectQuestions(questions, { count: 3, seed: `${seed}-kanji`, categories: ["kanji"] }),
-    ...selectQuestions(questions, { count: 3, seed: `${seed}-vocab`, categories: ["vocabulary"] }),
-    ...selectQuestions(questions, { count: 3, seed: `${seed}-grammar`, categories: ["grammar"] }),
-    ...selectQuestions(questions, { count: 1, seed: `${seed}-weak`, subcategories: weakSubs.length ? weakSubs : undefined })
-  ];
-}
-
 function presetLabel(preset: QuizPreset): string {
   return {
-    diagnostic: "Diagnostic test",
-    quick: "Quick 10-minute review",
-    weak: "Weak-area practice",
-    timed: "Timed mixed quiz",
-    kanji: "Kanji quiz",
-    vocab: "Vocabulary quiz",
-    grammar: "Grammar quiz",
-    final: "Final mixed simulation"
+    diagnostic: "実力診断",
+    quick: "短時間復習",
+    weak: "弱点克服",
+    timed: "時間制限付き練習",
+    kanji: "漢字",
+    vocab: "語彙",
+    grammar: "文法",
+    reading: "読解",
+    final: "章末試験"
   }[preset];
+}
+
+function confidenceLabel(confidence: Confidence): string {
+  return { sure: "確信あり", unsure: "やや不安", guess: "推測" }[confidence];
 }
 
 function formatTime(seconds: number): string {

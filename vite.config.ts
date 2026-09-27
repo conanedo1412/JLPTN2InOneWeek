@@ -14,9 +14,9 @@ export default defineConfig({
       registerType: "prompt",
       includeAssets: ["icons/icon.svg"],
       manifest: {
-        name: "JLPT N2 Five-Day Intensive",
-        short_name: "N2 Cram",
-        description: "Offline five-day JLPT N2 kanji, vocabulary, and grammar preparation.",
+        name: "N2 Quest: 30-day Adventure",
+        short_name: "N2 Quest",
+        description: "A month of JLPT N2 kanji, vocabulary, grammar, and reading practice.",
         theme_color: "#1b4d4a",
         background_color: "#f7f6f1",
         display: "standalone",

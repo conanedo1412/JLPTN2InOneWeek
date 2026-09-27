@@ -49,6 +49,9 @@ export function validateContent(content: Partial<StudyContent>): ValidationIssue
     if (/[A-Za-z]/.test(quizText)) issues.push({ message: `Question ${question.id} contains English letters in quiz-facing text.` });
     if (!contentIds.has(question.relatedContentId)) issues.push({ message: `Question ${question.id} references a content item that does not exist.` });
     const relatedKanji = kanjiById.get(question.relatedContentId);
+    if (relatedKanji && question.subcategory === "kanji-reading" && question.choices.filter(choice => relatedKanji.readings.includes(choice)).length !== 1) {
+      issues.push({ message: `Question ${question.id} must have exactly one valid reading among its choices.` });
+    }
     if (relatedKanji && question.subcategory === "kanji-reading" && !relatedKanji.readings.includes(question.correctAnswer)) {
       issues.push({ message: `Question ${question.id} uses a reading that is not listed for ${relatedKanji.kanji}.` });
     }

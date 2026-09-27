@@ -1,10 +1,11 @@
 import type { Rating, ReviewState } from "../../types";
 
 export function scheduleReview(state: ReviewState | undefined, contentId: string, currentDay: number, rating: Rating): ReviewState {
-  const interval = rating === "again" ? 0 : rating === "hard" ? 1 : rating === "good" ? 1 : 2;
+  const repetitions = Math.min(state?.seenCount ?? 0, 4);
+  const interval = rating === "again" ? 0 : rating === "hard" ? 1 : rating === "good" ? 2 ** repetitions : 2 ** (repetitions + 1);
   return {
     contentId,
-    dueDay: Math.min(5, Math.max(currentDay, currentDay + interval)),
+    dueDay: currentDay + interval,
     lastRating: rating,
     seenCount: (state?.seenCount ?? 0) + 1
   };
