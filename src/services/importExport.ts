@@ -103,6 +103,15 @@ export function exportProgress(progress: AppProgress): string {
 
 export function importProgress(text: string): AppProgress {
   const parsed = JSON.parse(text) as AppProgress;
-  if (parsed.version !== STORAGE_VERSION) throw new Error("Progress file version is unsupported.");
+  if (!parsed || parsed.version !== STORAGE_VERSION) throw new Error("Progress file version is unsupported.");
+  if (![parsed.answers, parsed.mistakes, parsed.review, parsed.completedTasks, parsed.progressHistory].every(Array.isArray)) throw new Error("Invalid progress arrays.");
+  const recordsValid = (rows: unknown[], fields: Record<string, string>) => rows.every(row => row && typeof row === "object" && Object.entries(fields).every(([key, type]) => typeof (row as Record<string, unknown>)[key] === type));
+  if (!parsed.completedTasks.every(id => typeof id === "string") ||
+      !recordsValid(parsed.answers, { questionId: "string", selectedAnswer: "string", correctAnswer: "string", correct: "boolean", answeredAt: "string", sessionId: "string", confidence: "string", category: "string", subcategory: "string", elapsedMs: "number" }) ||
+      !recordsValid(parsed.mistakes, { questionId: "string", category: "string", subcategory: "string", selectedAnswer: "string", correctAnswer: "string", explanation: "string", timesMissed: "number", corrected: "boolean", guessedCorrectly: "boolean" }) ||
+      !recordsValid(parsed.review, { contentId: "string", dueDay: "number", lastRating: "string", seenCount: "number" }) ||
+      !recordsValid(parsed.progressHistory, { date: "string", overallCompletion: "number" })) throw new Error("Invalid progress records.");
+  if (parsed.setup && (!Number.isInteger(parsed.setup.activeDay) || parsed.setup.activeDay < 1 || parsed.setup.activeDay > 30 || typeof parsed.setup.examDate !== "string" || ![30, 60, 90, 120].includes(parsed.setup.dailyMinutes) || !Array.isArray(parsed.setup.completedDays))) throw new Error("Invalid study setup.");
+  if (parsed.importedContent && validateContent(parsed.importedContent).length) throw new Error("Invalid imported content.");
   return sanitizeProgress(parsed);
 }

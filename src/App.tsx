@@ -4,11 +4,12 @@ import { dueReviewIds, scheduleReview } from "./features/learn/scheduler";
 import { updateMistakes } from "./features/mistakes/mistakeLogic";
 import { balancedPractice, makeAnswerRecord, selectQuestions } from "./features/quiz/quizLogic";
 import { Campaign } from "./features/progress/CampaignDashboard";
+import { ProgressBackup, ProgressDownload } from "./features/progress/ProgressBackup";
 import { campaignStats, dailyActivity } from "./features/progress/campaign";
 import { accuraciesBySubcategory, calculateWeakAreas, easyMaterialWarning, overallCompletion, subcategoryLabels } from "./features/progress/scoring";
 import { chapters, createDefaultSetup, monthPlan, getDayPlan } from "./features/study-plan/plan";
 import { advanceStudyDay, emptyProgress, loadProgress, saveProgress, STORAGE_KEY } from "./storage/progressStorage";
-import { exportProgress, importProgress, parseContentJson, parseVocabularyCsv, validateContent } from "./services/importExport";
+import { parseContentJson, parseVocabularyCsv, validateContent } from "./services/importExport";
 import type { AppProgress, Confidence, GrammarItem, QuizQuestion, Rating, StudyCategory, StudyContent, Subcategory, VocabularyItem } from "./types";
 import { daysBetweenLocal, todayLocal } from "./utils/date";
 import { shuffleDeterministic } from "./utils/random";
@@ -88,6 +89,13 @@ export default function App() {
   const [page, setPage] = useState<Page>("today");
   const [quizPreset, setQuizPreset] = useState<QuizPreset>("quick");
   const [toast, setToast] = useState("");
+  const [restoreRevision, setRestoreRevision] = useState(0);
+  const restoreProgress = (restored: AppProgress) => {
+    setProgress(restored);
+    setRestoreRevision(value => value + 1);
+    setPage("today");
+    setToast("学習記録を復元しました。");
+  };
   const content = useMemo(() => mergeContent(progress), [progress]);
   const setup = progress.setup;
   const level = campaignStats(progress).level;
@@ -123,7 +131,7 @@ export default function App() {
     return (
       <ErrorBoundary>
         {saveFailed && <p role="alert" className="notice">学習記録を保存できません。ブラウザーの保存設定と空き容量を確認してください。</p>}
-        <SetupPage onComplete={(nextSetup) => setProgress({ ...progress, setup: nextSetup })} />
+        <SetupPage onComplete={(nextSetup) => setProgress({ ...progress, setup: nextSetup })} backup={<ProgressBackup progress={progress} onRestore={restoreProgress} />} />
       </ErrorBoundary>
     );
   }
@@ -155,7 +163,8 @@ export default function App() {
           </nav>
         </aside>
 
-        <main className="content" id="main">
+        <main className="content" id="main" key={restoreRevision}>
+          <ProgressBackup progress={progress} onRestore={restoreProgress} />
           {saveFailed && <p role="alert" className="notice">学習記録を保存できませんでした。設定から記録を書き出し、ブラウザーの保存設定と空き容量を確認してください。</p>}
           {page === "today" && (
             <TodayPage
@@ -235,12 +244,13 @@ export default function App() {
   );
 }
 
-function SetupPage({ onComplete }: { onComplete: (setup: NonNullable<AppProgress["setup"]>) => void }) {
+function SetupPage({ onComplete, backup }: { onComplete: (setup: NonNullable<AppProgress["setup"]>) => void; backup: ReactNode }) {
   const defaults = createDefaultSetup();
   const [examDate, setExamDate] = useState(defaults.examDate);
   const [dailyMinutes, setDailyMinutes] = useState<30 | 60 | 90 | 120>(90);
   return (
     <main className="setup-shell">
+      {backup}
       <section className="setup-hero">
         <div>
           <p className="eyebrow">日本語能力試験二級 · 三十日間</p>
@@ -584,13 +594,14 @@ function QuizPage({
         timedMinutes={preset === "final" ? 60 : preset === "timed" ? duration : undefined}
         activeDay={setup.activeDay}
         onComplete={onComplete}
+        backup={<ProgressDownload progress={progress} />}
       />
       <button onClick={() => setSessionSeed(`${Date.now()}`)}>新しい問題に挑戦</button>
     </section>
   );
 }
 
-function QuizSession({ questions, timedMinutes, activeDay, onComplete }: { questions: QuizQuestion[]; timedMinutes?: number; activeDay: number; onComplete: (answers: ReturnType<typeof makeAnswerRecord>[]) => void }) {
+function QuizSession({ questions, timedMinutes, activeDay, onComplete, backup }: { questions: QuizQuestion[]; timedMinutes?: number; activeDay: number; onComplete: (answers: ReturnType<typeof makeAnswerRecord>[]) => void; backup: ReactNode }) {
   const [current, setCurrent] = useState(0);
   const [selected, setSelected] = useState<Record<string, string>>({});
   const [confidence, setConfidence] = useState<Record<string, Confidence>>({});
@@ -664,6 +675,7 @@ function QuizSession({ questions, timedMinutes, activeDay, onComplete }: { quest
     return (
       <section className="panel">
         <h2>学習結果</h2>
+        {backup}
         <div className="metric-grid small">
           <Metric label="正解数" value={`${correctCount}/${results.length}`} />
           <Metric label="時間のかかった正解" value={`${slowCorrect.length}`} />
@@ -854,15 +866,6 @@ function SettingsPage({ progress, content, onProgress }: { progress: AppProgress
     reader.readAsText(file);
   };
 
-  const download = (name: string, text: string) => {
-    const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = name;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
   return (
     <section className="page-stack">
       <header className="page-header">
@@ -908,19 +911,6 @@ function SettingsPage({ progress, content, onProgress }: { progress: AppProgress
                 setMessage("語彙一覧を読み込みました。");
               } catch (error) {
                 setMessage("語彙一覧の形式を確認してください。");
-              }
-            });
-          }} /></label>
-          <button onClick={() => download("学習記録.json", exportProgress(progress))}>学習記録を書き出す</button>
-          <label className="file-label">学習記録を復元する<input type="file" accept="application/json" onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (!file) return;
-            readFile(file, (text) => {
-              try {
-                onProgress(importProgress(text));
-                setMessage("学習記録を復元しました。");
-              } catch (error) {
-                setMessage("この記録ファイルは読み込めません。");
               }
             });
           }} /></label>
