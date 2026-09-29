@@ -15,6 +15,7 @@ export function selectQuestions(
   const exclude = new Set(options.excludeIds ?? []);
   const weighted = new Set(options.weightedIds ?? []);
   const filtered = questions.filter((q) => {
+    if (q.tags.includes("retired")) return false;
     if (exclude.has(q.id)) return false;
     if (options.categories && !options.categories.includes(q.category)) return false;
     if (options.subcategories && !options.subcategories.includes(q.subcategory)) return false;

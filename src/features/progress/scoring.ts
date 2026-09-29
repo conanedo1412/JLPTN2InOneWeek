@@ -44,17 +44,17 @@ export function calculateWeakAreas(records: AnswerRecord[], mistakes: MistakeRec
         const mistake = mistakeMap.get(record.questionId);
         if (!record.correct) {
           score += 5;
-          reasons.push("incorrect answers");
+          reasons.push("誤答あり");
         } else if (record.confidence === "guess") {
           score += 3;
-          reasons.push("correct guesses");
+          reasons.push("推測での正解");
         } else if (record.confidence === "unsure") {
           score += 1.5;
-          reasons.push("low confidence");
+          reasons.push("確信が低い");
         }
         if (record.elapsedMs > 75_000) {
           score += 1;
-          reasons.push("slow answers");
+          reasons.push("解答に時間がかかる");
         }
         if (mistake && mistake.timesMissed > 1) score += (mistake.timesMissed - 1) * 1.5;
         if (mistake?.corrected) score = Math.max(0, score - 2);
@@ -82,7 +82,7 @@ export function easyMaterialWarning(records: AnswerRecord[], weakAreas: WeakArea
   const vocabAccuracy = vocab.length ? vocab.filter((r) => r.correct).length / vocab.length : 0;
   const topRisk = weakAreas.find((w) => w.label === "critical" || w.label === "weak");
   if (vocab.length >= 8 && vocabAccuracy >= 0.85 && topRisk && topRisk.subcategory !== "vocabulary-recognition") {
-    return `You are already scoring well on basic vocabulary. Spend today's remaining time on ${subcategoryLabels[topRisk.subcategory].toLowerCase()}.`;
+    return `基本語彙はよくできています。残りの時間は「${subcategoryLabels[topRisk.subcategory]}」を優先しましょう。`;
   }
   return undefined;
 }

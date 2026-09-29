@@ -14,9 +14,9 @@ export default defineConfig({
       registerType: "prompt",
       includeAssets: ["icons/icon.svg"],
       manifest: {
-        name: "N2 Quest: 30-day Adventure",
-        short_name: "N2 Quest",
-        description: "A month of JLPT N2 kanji, vocabulary, grammar, and reading practice.",
+        name: "日本語二級の冒険：三十日間の学習",
+        short_name: "日本語二級の冒険",
+        description: "日本語能力試験二級の漢字・語彙・文法・読解を一か月で学習。",
         theme_color: "#1b4d4a",
         background_color: "#f7f6f1",
         display: "standalone",

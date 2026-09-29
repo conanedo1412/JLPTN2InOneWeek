@@ -51,6 +51,12 @@ The validator checks duplicate IDs, duplicate choices, missing correct answers, 
 
 Existing answers, flashcard reviews, settings, and XP evidence remain in the original browser storage key. Old five-day task checkmarks are retained but do not count toward the new campaign. Reviews follow the selected study day. Daily task checkboxes are self-reported; skill accuracy uses the latest attempt per question (up to 50 unique questions per skill), not task completion.
 
+The interface, flashcard presentation, notifications, and question feedback are Japanese-only. English source glosses remain in the bundled data for backward compatibility but are not displayed. Context questions do not show collocations or answer hints; 70 vocabulary and 40 grammar contexts use curated alternatives. Reading questions use passage-specific distractors and kanji readings use closer kana alternatives. The 320 stroke-count questions are retained as historical references but excluded from new sessions (931 active questions).
+
+Progress has no 30-day expiration. On a new local calendar day, the study day advances up to day 30 while answers, reviews, XP, completed tasks, and daily history remain intact. The daily goal counter resets because it represents today's work; previous achievements appear in the daily history. Legacy saves infer the date from the latest recorded activity and retain their existing version and IDs. When legacy saves contain no dated activity, migration starts the date anchor today without changing their selected day.
+
+Saves keep a separate previous-good backup. Unreadable primary data is retained under a recovery key before replacement, and failed writes show a Japanese warning. Storage is local to the same browser, profile, device, and site origin; it is not cloud synchronization. Use Settings' progress export/import before changing devices or clearing browser data. Clearing site data also clears these local backups.
+
 ## Bundled Study Bank
 
 The app includes roughly one thousand cumulative N2-prep kanji cards, 200+ vocabulary cards, 60+ grammar cards, and an expanded quiz bank. The broad kanji flashcard bank is generated from public kanjiapi.dev JLPT buckets and bundled locally so the app still works offline after deployment. The script is:

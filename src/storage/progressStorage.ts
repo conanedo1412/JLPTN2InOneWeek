@@ -1,7 +1,24 @@
 import type { AppProgress } from "../types";
+import { daysBetweenLocal, formatLocalDate, todayLocal } from "../utils/date";
 
 export const STORAGE_KEY = "jlpt-n2-five-day-progress";
 export const STORAGE_VERSION = 1;
+export const BACKUP_KEY = `${STORAGE_KEY}-backup`;
+export const RECOVERY_KEY = `${STORAGE_KEY}-recovery`;
+
+export function advanceStudyDay(progress: AppProgress, today = todayLocal()): AppProgress {
+  if (!progress.setup) return progress;
+  const setup = progress.setup;
+  const dates = [
+    ...progress.answers.map(answer => formatLocalDate(new Date(answer.answeredAt))),
+    ...progress.progressHistory.map(snapshot => snapshot.date),
+    ...progress.review.map(review => review.reviewedOn ?? "")
+  ].filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date) && date <= today).sort();
+  const previous = setup.lastStudyDate ?? dates.at(-1) ?? today;
+  if (previous >= today && setup.lastStudyDate) return progress;
+  const elapsed = Math.max(0, daysBetweenLocal(previous, today));
+  return { ...progress, setup: { ...setup, activeDay: Math.min(30, Math.max(1, setup.activeDay) + elapsed), lastStudyDate: today } };
+}
 
 export const emptyProgress: AppProgress = {
   version: STORAGE_VERSION,
@@ -29,17 +46,37 @@ export function sanitizeProgress(value: unknown): AppProgress {
   };
 }
 
-export function loadProgress(storage: Storage = localStorage): AppProgress {
+export function loadProgress(storage?: Storage): AppProgress {
   try {
+    storage ??= localStorage;
     const raw = storage.getItem(STORAGE_KEY);
-    if (!raw) return { ...emptyProgress };
-    return sanitizeProgress(JSON.parse(raw));
+    if (raw) {
+      try { return advanceStudyDay(sanitizeProgress(JSON.parse(raw))); } catch { /* Try the independent backup. */ }
+    }
+    const backup = storage.getItem(BACKUP_KEY);
+    return backup ? advanceStudyDay(sanitizeProgress(JSON.parse(backup))) : { ...emptyProgress };
   } catch {
-    storage.removeItem(STORAGE_KEY);
     return { ...emptyProgress };
   }
 }
 
-export function saveProgress(progress: AppProgress, storage: Storage = localStorage): void {
-  storage.setItem(STORAGE_KEY, JSON.stringify(sanitizeProgress(progress)));
+export function saveProgress(progress: AppProgress, storage?: Storage): boolean {
+  try {
+    storage ??= localStorage;
+    const previous = storage.getItem(STORAGE_KEY);
+    const serialized = JSON.stringify(sanitizeProgress(progress));
+    if (previous === serialized) return true;
+    if (previous) {
+      let parsed: Partial<AppProgress> | undefined;
+      try { parsed = JSON.parse(previous); } catch { /* Preserve unreadable data before replacement. */ }
+      if (parsed && parsed.version !== STORAGE_VERSION) return false;
+      if (!parsed) storage.setItem(RECOVERY_KEY, previous);
+      else storage.setItem(BACKUP_KEY, previous);
+    }
+    storage.setItem(STORAGE_KEY, serialized);
+    if (!storage.getItem(BACKUP_KEY)) storage.setItem(BACKUP_KEY, serialized);
+    return true;
+  } catch {
+    return false;
+  }
 }

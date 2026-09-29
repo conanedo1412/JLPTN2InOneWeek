@@ -4,26 +4,27 @@ import { dueReviewIds, scheduleReview } from "./features/learn/scheduler";
 import { updateMistakes } from "./features/mistakes/mistakeLogic";
 import { balancedPractice, makeAnswerRecord, selectQuestions } from "./features/quiz/quizLogic";
 import { Campaign } from "./features/progress/CampaignDashboard";
-import { campaignStats } from "./features/progress/campaign";
+import { campaignStats, dailyActivity } from "./features/progress/campaign";
 import { accuraciesBySubcategory, calculateWeakAreas, easyMaterialWarning, overallCompletion, subcategoryLabels } from "./features/progress/scoring";
 import { chapters, createDefaultSetup, monthPlan, getDayPlan } from "./features/study-plan/plan";
-import { emptyProgress, loadProgress, saveProgress } from "./storage/progressStorage";
+import { advanceStudyDay, emptyProgress, loadProgress, saveProgress, STORAGE_KEY } from "./storage/progressStorage";
 import { exportProgress, importProgress, parseContentJson, parseVocabularyCsv, validateContent } from "./services/importExport";
 import type { AppProgress, Confidence, GrammarItem, QuizQuestion, Rating, StudyCategory, StudyContent, Subcategory, VocabularyItem } from "./types";
 import { daysBetweenLocal, todayLocal } from "./utils/date";
 import { shuffleDeterministic } from "./utils/random";
+import { deckLabels, japaneseFormation, japaneseText, kindLabels, ratingLabels, riskLabels } from "./utils/japanese";
 
 type Page = "today" | "learn" | "quiz" | "mistakes" | "progress" | "settings";
 type QuizPreset = "diagnostic" | "quick" | "weak" | "timed" | "kanji" | "vocab" | "grammar" | "reading" | "final";
 type FlashcardItem = GrammarItem | VocabularyItem | StudyContent["kanji"][number];
 
 const navItems: { page: Page; label: string }[] = [
-  { page: "today", label: "Today" },
-  { page: "learn", label: "Cards" },
-  { page: "quiz", label: "Quiz" },
-  { page: "mistakes", label: "Mistakes" },
-  { page: "progress", label: "Progress" },
-  { page: "settings", label: "Settings" }
+  { page: "today", label: "今日" },
+  { page: "learn", label: "単語帳" },
+  { page: "quiz", label: "問題" },
+  { page: "mistakes", label: "復習" },
+  { page: "progress", label: "学習記録" },
+  { page: "settings", label: "設定" }
 ];
 
 function mergeContent(progress: AppProgress): StudyContent {
@@ -37,10 +38,25 @@ function mergeContent(progress: AppProgress): StudyContent {
 
 function usePersistentProgress() {
   const [progress, setProgress] = useState<AppProgress>(() => loadProgress());
+  const [saveFailed, setSaveFailed] = useState(false);
+  const latest = useRef(progress);
+  latest.current = progress;
   useEffect(() => {
-    saveProgress(progress);
+    setSaveFailed(!saveProgress(progress));
   }, [progress]);
-  return [progress, setProgress] as const;
+  useEffect(() => {
+    const advance = () => setProgress(current => advanceStudyDay(current));
+    const flush = () => { saveProgress(latest.current); };
+    const sync = (event: StorageEvent) => {
+      if (event.key === STORAGE_KEY && event.newValue) setProgress(loadProgress());
+    };
+    const interval = window.setInterval(advance, 30_000);
+    window.addEventListener("focus", advance);
+    window.addEventListener("pagehide", flush);
+    window.addEventListener("storage", sync);
+    return () => { window.clearInterval(interval); window.removeEventListener("focus", advance); window.removeEventListener("pagehide", flush); window.removeEventListener("storage", sync); };
+  }, []);
+  return [progress, setProgress, saveFailed] as const;
 }
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
@@ -56,9 +72,9 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean
       return (
         <main className="shell narrow">
           <section className="panel">
-            <h1>Study data recovered</h1>
-            <p>Something unexpected happened while rendering. Reloading usually restores the local progress safely.</p>
-            <button onClick={() => window.location.reload()}>Reload</button>
+            <h1>画面を表示できませんでした</h1>
+            <p>保存済みの学習記録を読み込むには、再読み込みしてください。</p>
+            <button onClick={() => window.location.reload()}>再読み込み</button>
           </section>
         </main>
       );
@@ -68,7 +84,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean
 }
 
 export default function App() {
-  const [progress, setProgress] = usePersistentProgress();
+  const [progress, setProgress, saveFailed] = usePersistentProgress();
   const [page, setPage] = useState<Page>("today");
   const [quizPreset, setQuizPreset] = useState<QuizPreset>("quick");
   const [toast, setToast] = useState("");
@@ -82,8 +98,8 @@ export default function App() {
   }, [level]);
 
   useEffect(() => {
-    const update = () => setToast("An update is available.");
-    const offline = () => setToast("Offline study is ready.");
+    const update = () => setToast("更新版を利用できます。");
+    const offline = () => setToast("オフライン学習の準備ができました。");
     window.addEventListener("pwa-update-ready", update);
     window.addEventListener("pwa-offline-ready", offline);
     return () => {
@@ -106,6 +122,7 @@ export default function App() {
   if (!setup) {
     return (
       <ErrorBoundary>
+        {saveFailed && <p role="alert" className="notice">学習記録を保存できません。ブラウザーの保存設定と空き容量を確認してください。</p>}
         <SetupPage onComplete={(nextSetup) => setProgress({ ...progress, setup: nextSetup })} />
       </ErrorBoundary>
     );
@@ -123,13 +140,13 @@ export default function App() {
       <div className="app">
         <aside className="sidebar">
           <div className="brand">
-            <span className="brand-mark" aria-hidden="true">N2</span>
+            <span className="brand-mark" aria-hidden="true">二級</span>
             <div>
-              <strong>N2 Quest</strong>
-              <span>The 30-day adventure</span>
+              <strong>日本語二級の冒険</strong>
+              <span>三十日間の学習</span>
             </div>
           </div>
-          <nav aria-label="Main navigation">
+          <nav aria-label="主な画面">
             {navItems.map((item) => (
               <button key={item.page} className={page === item.page ? "active" : ""} onClick={() => setPage(item.page)}>
                 {item.label}
@@ -139,6 +156,7 @@ export default function App() {
         </aside>
 
         <main className="content" id="main">
+          {saveFailed && <p role="alert" className="notice">学習記録を保存できませんでした。設定から記録を書き出し、ブラウザーの保存設定と空き容量を確認してください。</p>}
           {page === "today" && (
             <TodayPage
               progress={progress}
@@ -181,13 +199,13 @@ export default function App() {
                     answers: nextAnswers,
                     mistakes: nextMistakes,
                     progressHistory: [
-                      ...current.progressHistory,
+                      ...current.progressHistory.filter(snapshot => snapshot.date !== todayLocal()),
                       {
                         date: todayLocal(),
                         overallCompletion: completion,
                         accuracies: accuraciesBySubcategory(nextAnswers)
                       }
-                    ].slice(-30)
+                    ]
                   };
                 });
               }}
@@ -198,7 +216,7 @@ export default function App() {
           {page === "settings" && <SettingsPage progress={progress} content={content} onProgress={setProgress} />}
         </main>
 
-        <nav className="bottom-nav" aria-label="Mobile navigation">
+        <nav className="bottom-nav" aria-label="画面の切り替え">
           {navItems.map((item) => (
             <button key={item.page} className={page === item.page ? "active" : ""} onClick={() => setPage(item.page)}>
               {item.label}
@@ -209,7 +227,7 @@ export default function App() {
         {toast && (
           <div className="toast" role="status">
             <span>{toast}</span>
-            {toast.includes("update") ? <button onClick={() => window.dispatchEvent(new Event("pwa-apply-update"))}>Update now</button> : <button onClick={() => setToast("")}>OK</button>}
+            {toast.includes("更新版") ? <><button onClick={() => window.dispatchEvent(new Event("pwa-apply-update"))}>更新する</button><button onClick={() => setToast("")}>後で</button></> : <button onClick={() => setToast("")}>閉じる</button>}
           </div>
         )}
       </div>
@@ -225,10 +243,10 @@ function SetupPage({ onComplete }: { onComplete: (setup: NonNullable<AppProgress
     <main className="setup-shell">
       <section className="setup-hero">
         <div>
-          <p className="eyebrow">JLPT N2 · 30 days</p>
-          <h1>N2 Quest</h1>
+          <p className="eyebrow">日本語能力試験二級 · 三十日間</p>
+          <h1>日本語二級の冒険</h1>
           <p>
-            A month of kanji, vocabulary, grammar, and reading. Build your skills one day at a time.
+            漢字・語彙・文法・読解を、一日ずつ積み重ねて身につけましょう。
           </p>
         </div>
       </section>
@@ -237,16 +255,16 @@ function SetupPage({ onComplete }: { onComplete: (setup: NonNullable<AppProgress
           className="panel"
           onSubmit={(event) => {
             event.preventDefault();
-            onComplete({ examDate, dailyMinutes, activeDay: 1, completedDays: [] });
+            onComplete({ examDate, dailyMinutes, activeDay: 1, completedDays: [], lastStudyDate: todayLocal() });
           }}
         >
-          <h2>Setup</h2>
+          <h2>初期設定</h2>
           <label>
-            Exam date
+            試験日
             <input type="date" value={examDate} onChange={(event) => setExamDate(event.target.value)} />
           </label>
           <fieldset>
-            <legend>Daily study time</legend>
+            <legend>一日の学習時間</legend>
             <div className="segmented">
               {[30, 60, 90, 120].map((minutes) => (
                 <button
@@ -255,17 +273,17 @@ function SetupPage({ onComplete }: { onComplete: (setup: NonNullable<AppProgress
                   className={dailyMinutes === minutes ? "active" : ""}
                   onClick={() => setDailyMinutes(minutes as 30 | 60 | 90 | 120)}
                 >
-                  {minutes} min
+                  {minutes}分
                 </button>
               ))}
             </div>
           </fieldset>
-          <button className="primary" type="submit">Start dashboard</button>
+          <button className="primary" type="submit">学習を始める</button>
         </form>
-        <div className="plan-list" aria-label="Five chapters">
+        <div className="plan-list" aria-label="五つの章">
           {chapters.map((day, index) => (
             <article className="panel compact" key={day.title}>
-              <span className="day-pill">Days {index * 6 + 1}–{index * 6 + 6}</span>
+              <span className="day-pill">{index * 6 + 1}～{index * 6 + 6}日目</span>
               <h3>{day.title}</h3>
               <p>{day.intent}</p>
             </article>
@@ -311,15 +329,15 @@ function TodayPage({
     <section className="page-stack">
       <header className="page-header">
         <div>
-          <p className="eyebrow">Day {setup.activeDay}</p>
+          <p className="eyebrow">{setup.activeDay}日目</p>
           <h1>{plan.title}</h1>
           <p>{plan.intent}</p>
         </div>
         <div className="header-controls">
           <label>
-            Active day
+            学習日
             <select value={setup.activeDay} onChange={(event) => onSetupChange({ activeDay: Number(event.target.value) })}>
-              {monthPlan.map(({ day }) => <option key={day} value={day}>Day {day}</option>)}
+              {monthPlan.map(({ day }) => <option key={day} value={day}>{day}日目</option>)}
             </select>
           </label>
         </div>
@@ -329,50 +347,50 @@ function TodayPage({
       <Campaign progress={progress} onDay={activeDay => onSetupChange({ activeDay })} />
 
       <div className="metric-grid">
-        <Metric label="Days to exam" value={daysRemaining < 0 ? "Date elapsed" : `${daysRemaining}`} />
-        <Metric label="Estimated study" value={`${setup.dailyMinutes} min`} />
-        <Metric label="Overall complete" value={`${completion}%`} />
-        <Metric label="Mistakes waiting" value={`${progress.mistakes.filter((m) => !m.corrected).length}`} />
-        <Metric label="Kanji accuracy" value={`${kanjiAccuracy}%`} />
-        <Metric label="Vocabulary accuracy" value={`${vocabAccuracy}%`} />
-        <Metric label="Grammar accuracy" value={`${grammarAccuracy}%`} />
-        <Metric label="Study streak" value={`${calculateStreak(progress)} day${calculateStreak(progress) === 1 ? "" : "s"}`} />
+        <Metric label="試験までの日数" value={daysRemaining < 0 ? "試験日を過ぎました" : `${daysRemaining}`} />
+        <Metric label="学習時間" value={`${setup.dailyMinutes}分`} />
+        <Metric label="課題の達成率" value={`${completion}%`} />
+        <Metric label="未復習の問題" value={`${progress.mistakes.filter((m) => !m.corrected).length}`} />
+        <Metric label="漢字の正答率" value={`${kanjiAccuracy}%`} />
+        <Metric label="語彙の正答率" value={`${vocabAccuracy}%`} />
+        <Metric label="文法の正答率" value={`${grammarAccuracy}%`} />
+        <Metric label="連続学習" value={`${calculateStreak(progress)}日`} />
       </div>
 
       <div className="action-row">
-        <button className="primary" onClick={() => onStartQuiz(continuePreset)}>Continue Today's Study</button>
-        <button onClick={() => onStartQuiz("quick")}>Quick 10-Minute Review</button>
-        <button onClick={() => onStartQuiz("weak")}>Practice Weak Areas</button>
-        <button onClick={() => onStartQuiz("timed")}>Timed Mixed Quiz</button>
+        <button className="primary" onClick={() => onStartQuiz(continuePreset)}>今日の学習を続ける</button>
+        <button onClick={() => onStartQuiz("quick")}>短時間で復習</button>
+        <button onClick={() => onStartQuiz("weak")}>弱点を練習</button>
+        <button onClick={() => onStartQuiz("timed")}>時間を計って練習</button>
       </div>
 
       <section className="split">
         <div className="panel">
-          <h2>Today's tasks</h2>
+          <h2>今日の課題</h2>
           <div className="task-list">
             {plan.tasks.map((task) => (
               <div className="task-row" key={task.id}>
-                <input aria-label={`Complete ${task.title}`} type="checkbox" checked={progress.completedTasks.includes(task.id)} onChange={() => onTaskToggle(task.id)} />
+                <input aria-label={`${task.title}を完了`} type="checkbox" checked={progress.completedTasks.includes(task.id)} onChange={() => onTaskToggle(task.id)} />
                 <span>
                   <strong>{task.title}</strong>
-                  <small>{Math.round(task.minutes * setup.dailyMinutes / 90)} min · {task.focus}</small>
+                  <small>{Math.round(task.minutes * setup.dailyMinutes / 90)}分 · {task.focus}</small>
                 </span>
-                <button onClick={() => task.mode === "learn" ? onNavigate("learn") : task.mode === "mistakes" ? onNavigate("mistakes") : onStartQuiz(task.id.endsWith("reading") ? "reading" : task.mode === "diagnostic" ? "diagnostic" : task.mode === "timed" ? "final" : (["kanji", "vocab", "grammar", "grammar", "reading", "weak"] as QuizPreset[])[(setup.activeDay - 1) % 6])}>Start</button>
+                <button onClick={() => task.mode === "learn" ? onNavigate("learn") : task.mode === "mistakes" ? onNavigate("mistakes") : onStartQuiz(task.id.endsWith("reading") ? "reading" : task.mode === "diagnostic" ? "diagnostic" : task.mode === "timed" ? "final" : (["kanji", "vocab", "grammar", "grammar", "reading", "weak"] as QuizPreset[])[(setup.activeDay - 1) % 6])}>開始</button>
               </div>
             ))}
           </div>
         </div>
         <div className="panel">
-          <h2>Current weak categories</h2>
+          <h2>重点的に復習する分野</h2>
           <div className="tag-list">
             {activeWeak.length ? activeWeak.map((weak) => (
               <span className={`risk ${weak.label}`} key={weak.subcategory}>
-                {subcategoryLabels[weak.subcategory]} · {weak.label}
+                {subcategoryLabels[weak.subcategory]} · {riskLabels[weak.label]}
               </span>
-            )) : <p>No diagnostic data yet. Start with the mixed diagnostic.</p>}
+            )) : <p>まだ診断の記録がありません。実力診断から始めましょう。</p>}
           </div>
           <p className="fineprint">
-            Bundled content: {content.kanji.length} kanji, {content.vocabulary.length} vocabulary items, {content.grammar.length} grammar patterns, {content.questions.length} questions.
+            収録内容：漢字 {content.kanji.length}項目、語彙 {content.vocabulary.length}語、文法 {content.grammar.length}項目、問題 {content.questions.length}問。
           </p>
         </div>
       </section>
@@ -419,7 +437,7 @@ function LearnPage({ progress, content, onProgress }: { progress: AppProgress; c
     if (!card) return;
     onProgress((current) => {
       const existing = current.review.find((item) => item.contentId === card.id);
-      const next = scheduleReview(existing, card.id, setup.activeDay, rating);
+      const next = { ...scheduleReview(existing, card.id, setup.activeDay, rating), reviewedOn: todayLocal() };
       return { ...current, review: [...current.review.filter((item) => item.contentId !== card.id), next] };
     });
     setRevealed(false);
@@ -430,80 +448,74 @@ function LearnPage({ progress, content, onProgress }: { progress: AppProgress; c
     <section className="page-stack">
       <header className="page-header">
         <div>
-          <p className="eyebrow">Flashcards</p>
-          <h1>Kanji, vocabulary, and grammar cards</h1>
-          <p>{content.kanji.length} kanji cards · {content.vocabulary.length} vocabulary cards · {content.grammar.length} grammar cards</p>
+          <p className="eyebrow">単語帳</p>
+          <h1>漢字・語彙・文法</h1>
+          <p>漢字 {content.kanji.length}項目 · 語彙 {content.vocabulary.length}語 · 文法 {content.grammar.length}項目</p>
         </div>
         <div className="flashcard-controls">
-          <div className="segmented" role="group" aria-label="Card type">
+          <div className="segmented" role="group" aria-label="学習分野">
             {(["kanji", "vocabulary", "grammar"] as const).map((item) => (
-              <button key={item} className={kind === item ? "active" : ""} onClick={() => resetDeck(item, deckMode)}>{item}</button>
+              <button key={item} className={kind === item ? "active" : ""} onClick={() => resetDeck(item, deckMode)}>{kindLabels[item]}</button>
             ))}
           </div>
-          <div className="segmented" role="group" aria-label="Deck mode">
+          <div className="segmented" role="group" aria-label="出題範囲">
             {(["daily", "mixed", "due", "hard", "random"] as const).map((item) => (
-              <button key={item} className={deckMode === item ? "active" : ""} onClick={() => resetDeck(kind, item)}>{item}</button>
+              <button key={item} className={deckMode === item ? "active" : ""} onClick={() => resetDeck(kind, item)}>{deckLabels[item]}</button>
             ))}
           </div>
-          <button onClick={() => resetDeck(kind, deckMode)}>Shuffle deck</button>
+          <button onClick={() => resetDeck(kind, deckMode)}>順番を変える</button>
         </div>
       </header>
       {card ? (
         <article className="study-card">
           <div className="card-meta">
             <span className="day-pill">{index + 1} / {cards.length}</span>
-            <span className="day-pill">difficulty {card.difficulty}</span>
-            <span className="day-pill">{deckMode}</span>
+            <span className="day-pill">難易度 {card.difficulty}</span>
+            <span className="day-pill">{deckLabels[deckMode]}</span>
           </div>
           <CardFront card={card} />
-          {revealed ? <CardBack card={card} /> : <button className="primary" onClick={() => setRevealed(true)}>Reveal answer</button>}
+          {revealed ? <CardBack card={card} /> : <button className="primary" onClick={() => setRevealed(true)}>答えを見る</button>}
           <div className="rating-row">
             {(["again", "hard", "good", "easy"] as const).map((rating) => (
-              <button key={rating} onClick={() => rate(rating)} disabled={!revealed}>{rating}</button>
+              <button key={rating} onClick={() => rate(rating)} disabled={!revealed}>{ratingLabels[rating]}</button>
             ))}
           </div>
         </article>
-      ) : <div className="panel"><h2>{cards.length ? "Deck complete" : "No cards due"}</h2><p>{index} cards reviewed in this session.</p><button onClick={() => resetDeck(kind, deckMode)}>Start another deck</button></div>}
+      ) : <div className="panel"><h2>{cards.length ? "今回の学習は完了です" : "復習予定のカードはありません"}</h2><p>今回は{index}枚を学習しました。</p><button onClick={() => resetDeck(kind, deckMode)}>次の学習を始める</button></div>}
     </section>
   );
 }
 
 function CardFront({ card }: { card: FlashcardItem }) {
-  if ("pattern" in card) return <h2>{card.pattern}</h2>;
-  if ("word" in card) return <><h2 className="jp">{card.word}</h2><p>{card.partOfSpeech}</p></>;
-  return <h2 className="jp mega">{card.kanji}</h2>;
+  if ("pattern" in card) return <h2>{japaneseText(japaneseFormation(card.pattern))}</h2>;
+  if ("word" in card) return <h2 className="jp">{japaneseText(card.word)}</h2>;
+  return <h2 className="jp mega">{japaneseText(card.kanji)}</h2>;
 }
 
 function CardBack({ card }: { card: FlashcardItem }) {
   if ("pattern" in card) {
     return (
       <div className="answer-block">
-        <p>{card.meaning}</p>
-        <p><strong>Formation:</strong> {card.formation}</p>
-        <p className="jp">{card.example}</p>
-        <p>{card.translation}</p>
-        <p><strong>Do not confuse with:</strong> {card.commonConfusion}</p>
-        <p><strong>Hint:</strong> {card.memoryHint}</p>
+        <p>{japaneseText(card.japaneseExplanation)}</p>
+        <p><strong>接続：</strong>{japaneseText(japaneseFormation(card.formation))}</p>
+        <p className="jp">{japaneseText(card.example)}</p>
       </div>
     );
   }
   if ("word" in card) {
     return (
       <div className="answer-block">
-        <p><strong>Reading:</strong> <span className="jp">{card.reading}</span></p>
-        <p>{card.meaning} · {card.japaneseDefinition}</p>
-        <p className="jp">{card.exampleSentence}</p>
-        <p>{card.translation}</p>
-        <p><strong>Collocation:</strong> {card.collocation} · <strong>Similar:</strong> {card.similarWord}</p>
+        <p><strong>読み：</strong><span className="jp">{japaneseText(card.reading)}</span></p>
+        <p>{japaneseText(card.japaneseDefinition)}</p>
+        <p className="jp">{japaneseText(card.exampleSentence)}</p>
       </div>
     );
   }
   return (
     <div className="answer-block">
-      <p>{card.meaning}</p>
-      <p><strong>Reading:</strong> <span className="jp">{card.readings.join("、")}</span></p>
-      <p className="jp">{card.exampleSentence}</p>
-        <p><strong>Tags:</strong> {card.tags.join(", ")}</p>
+      <p><strong>読み：</strong><span className="jp">{japaneseText(card.readings.join("、").replaceAll(".", "・"))}</span></p>
+      {card.exampleCompound && <p><strong>語例：</strong>{japaneseText(card.exampleCompound)}</p>}
+      {card.exampleSentence && <p className="jp">{japaneseText(card.exampleSentence)}</p>}
     </div>
   );
 }
@@ -742,20 +754,20 @@ function MistakesPage({ progress, content, onStartQuiz }: { progress: AppProgres
     <section className="page-stack">
       <header className="page-header">
         <div>
-          <p className="eyebrow">Mistake review</p>
-          <h1>{visible.length} items awaiting attention</h1>
+          <p className="eyebrow">間違えた問題の復習</p>
+          <h1>復習する問題：{visible.length}問</h1>
         </div>
         <div className="toolbar">
-          <select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)} aria-label="Mistake filter">
-            <option value="open">Not yet corrected</option>
-            <option value="all">All mistakes</option>
-            <option value="kanji">Kanji</option>
-            <option value="vocabulary">Vocabulary</option>
-            <option value="grammar">Grammar</option>
-            <option value="guess">Guessed correctly</option>
-            <option value="repeat">Missed more than once</option>
+          <select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)} aria-label="復習の絞り込み">
+            <option value="open">未克服</option>
+            <option value="all">すべて</option>
+            <option value="kanji">漢字</option>
+            <option value="vocabulary">語彙</option>
+            <option value="grammar">文法</option>
+            <option value="guess">推測で正解</option>
+            <option value="repeat">繰り返し間違えた問題</option>
           </select>
-          <button onClick={() => onStartQuiz("weak")}>Practice weak areas</button>
+          <button onClick={() => onStartQuiz("weak")}>弱点を練習</button>
         </div>
       </header>
       <div className="mistake-list">
@@ -763,14 +775,14 @@ function MistakesPage({ progress, content, onStartQuiz }: { progress: AppProgres
           const question = questionMap.get(mistake.questionId);
           return (
             <article className="panel compact" key={mistake.questionId}>
-              <span className={`risk ${mistake.corrected ? "strong" : "weak"}`}>{mistake.corrected ? "corrected" : "needs review"}</span>
-              <h3>{question?.prompt ?? mistake.questionId}</h3>
-              <p>Your answer: {mistake.selectedAnswer || "blank"} · Correct: {mistake.correctAnswer}</p>
-              <p>{mistake.explanation}</p>
-              <small>Missed {mistake.timesMissed} time{mistake.timesMissed === 1 ? "" : "s"} · Confidence: {mistake.confidence}</small>
+              <span className={`risk ${mistake.corrected ? "strong" : "weak"}`}>{mistake.corrected ? "克服済み" : "要復習"}</span>
+              <h3>{question?.prompt ?? "過去の問題"}</h3>
+              <p>回答：{japaneseText(mistake.selectedAnswer || "未回答")} · 正解：{japaneseText(mistake.correctAnswer)}</p>
+              <p>{japaneseText(mistake.explanation)}</p>
+              <small>誤答：{mistake.timesMissed}回 · 確信度：{confidenceLabel(mistake.confidence)}</small>
             </article>
           );
-        }) : <div className="panel">No mistakes match this filter.</div>}
+        }) : <div className="panel">該当する復習問題はありません。</div>}
       </div>
     </section>
   );
@@ -781,14 +793,14 @@ function ProgressPage({ progress, weakAreas, accuracies }: { progress: AppProgre
     <section className="page-stack">
       <header className="page-header">
         <div>
-          <p className="eyebrow">Progress</p>
-          <h1>Readiness trend, not a score prediction</h1>
-          <p>The app ranks risk areas. It does not estimate or guarantee official JLPT points.</p>
+          <p className="eyebrow">学習記録</p>
+          <h1>分野ごとの学習状況</h1>
+          <p>正答率と誤答の傾向から復習する分野を確認できます。本試験の得点予測ではありません。</p>
         </div>
       </header>
       <div className="split">
         <div className="panel">
-          <h2>Accuracy by skill</h2>
+          <h2>分野別の正答率</h2>
           {Object.entries(accuracies).map(([subcategory, value]) => (
             <div className="bar-row" key={subcategory}>
               <span>{subcategoryLabels[subcategory as Subcategory]}</span>
@@ -798,27 +810,31 @@ function ProgressPage({ progress, weakAreas, accuracies }: { progress: AppProgre
           ))}
         </div>
         <div className="panel">
-          <h2>Risk areas</h2>
+          <h2>復習の優先度</h2>
           {weakAreas.slice(0, 8).map((weak) => (
             <article className="risk-row" key={weak.subcategory}>
-              <span className={`risk ${weak.label}`}>{weak.label}</span>
+              <span className={`risk ${weak.label}`}>{riskLabels[weak.label]}</span>
               <strong>{subcategoryLabels[weak.subcategory]}</strong>
-              <small>{weak.reasons.length ? weak.reasons.join(", ") : "No evidence yet"}</small>
+              <small>{weak.reasons.length ? weak.reasons.join(", ") : "まだ記録がありません"}</small>
             </article>
           ))}
         </div>
       </div>
       <section className="panel">
-        <h2>Final chapter checklist</h2>
+        <h2>日別の学習記録</h2>
+        {dailyActivity(progress).length ? <table className="history-table"><thead><tr><th>学習日</th><th>解答数</th><th>正解数</th><th>一日の目標</th></tr></thead><tbody>{dailyActivity(progress).map(day => <tr key={day.date}><td>{day.date}</td><td>{day.questions}問</td><td>{day.correct}問</td><td>{day.questions >= 20 ? "達成" : "継続中"}</td></tr>)}</tbody></table> : <p>まだ解答の記録がありません。</p>}
+      </section>
+      <section className="panel">
+        <h2>試験前の確認</h2>
         <ul className="checklist">
           {[
-            "Do not get stuck on one grammar question.",
-            "Eliminate clearly wrong answers first.",
-            "Pay attention to connectors and sentence endings.",
-            "For sentence ordering, identify fixed grammar chunks.",
-            "Guess rather than leaving an answer blank.",
-            "Protect time for later sections.",
-            "Review repeated personal mistakes, not every topic."
+            "一つの文法問題に時間をかけすぎない。",
+            "明らかに違う選択肢から除く。",
+            "接続表現と文末に注意する。",
+            "並べ替えでは、まとまりとなる表現を見つける。",
+            "未回答を残さず、最も適切だと思うものを選ぶ。",
+            "後半の読解に使う時間を確保する。",
+            "繰り返し間違えた問題を優先して復習する。"
           ].map((item) => <li key={item}>{item}</li>)}
         </ul>
       </section>
@@ -834,7 +850,7 @@ function SettingsPage({ progress, content, onProgress }: { progress: AppProgress
   const readFile = (file: File, handler: (text: string) => void) => {
     const reader = new FileReader();
     reader.onload = () => handler(String(reader.result ?? ""));
-    reader.onerror = () => setMessage("Could not read the selected file.");
+    reader.onerror = () => setMessage("選択したファイルを読み込めませんでした。");
     reader.readAsText(file);
   };
 
@@ -851,35 +867,36 @@ function SettingsPage({ progress, content, onProgress }: { progress: AppProgress
     <section className="page-stack">
       <header className="page-header">
         <div>
-          <p className="eyebrow">Settings</p>
-          <h1>Local data and deployment-safe content</h1>
+          <p className="eyebrow">設定</p>
+          <h1>学習記録と設定</h1>
         </div>
       </header>
       {message && <div className="notice" role="status">{message}</div>}
       <div className="split">
         <section className="panel">
-          <h2>Plan controls</h2>
-          <label>Exam date<input type="date" value={setup.examDate} onChange={(event) => patchSetup({ examDate: event.target.value })} /></label>
-          <label>Active day<select value={setup.activeDay} onChange={(event) => patchSetup({ activeDay: Number(event.target.value) })}>{monthPlan.map(({ day }) => <option key={day} value={day}>Day {day}</option>)}</select></label>
-          <label>Daily minutes<select value={setup.dailyMinutes} onChange={(event) => patchSetup({ dailyMinutes: Number(event.target.value) as 30 | 60 | 90 | 120 })}>{[30, 60, 90, 120].map((m) => <option key={m} value={m}>{m}</option>)}</select></label>
-          <label>Theme<select value={progress.theme} onChange={(event) => onProgress({ ...progress, theme: event.target.value as AppProgress["theme"] })}><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
+          <h2>学習計画</h2>
+          <label>試験日<input type="date" value={setup.examDate} onChange={(event) => patchSetup({ examDate: event.target.value })} /></label>
+          <label>学習日<select value={setup.activeDay} onChange={(event) => patchSetup({ activeDay: Number(event.target.value) })}>{monthPlan.map(({ day }) => <option key={day} value={day}>{day}日目</option>)}</select></label>
+          <label>一日の学習時間<select value={setup.dailyMinutes} onChange={(event) => patchSetup({ dailyMinutes: Number(event.target.value) as 30 | 60 | 90 | 120 })}>{[30, 60, 90, 120].map((m) => <option key={m} value={m}>{m}</option>)}</select></label>
+          <label>表示<select value={progress.theme} onChange={(event) => onProgress({ ...progress, theme: event.target.value as AppProgress["theme"] })}><option value="system">端末に合わせる</option><option value="light">明るい表示</option><option value="dark">暗い表示</option></select></label>
         </section>
         <section className="panel">
-          <h2>Import and export</h2>
-          <label className="file-label">Import study content JSON<input type="file" accept="application/json" onChange={(event) => {
+          <h2>記録の保存と復元</h2>
+          <p>学習記録はこの端末のブラウザーに自動保存され、三十日を過ぎても残ります。別の端末への移行やブラウザーのデータ削除に備え、定期的に書き出してください。</p>
+          <label className="file-label">教材ファイルを読み込む<input type="file" accept="application/json" onChange={(event) => {
             const file = event.target.files?.[0];
             if (!file) return;
             readFile(file, (text) => {
               try {
                 const imported = parseContentJson(text);
                 onProgress({ ...progress, importedContent: imported });
-                setMessage("Study content imported.");
+                setMessage("教材を読み込みました。");
               } catch (error) {
-                setMessage(error instanceof Error ? error.message : "Invalid content file.");
+                setMessage("教材ファイルの形式を確認してください。");
               }
             });
           }} /></label>
-          <label className="file-label">Import vocabulary CSV<input type="file" accept=".csv,text/csv" onChange={(event) => {
+          <label className="file-label">語彙一覧を読み込む<input type="file" accept=".csv,text/csv" onChange={(event) => {
             const file = event.target.files?.[0];
             if (!file) return;
             readFile(file, (text) => {
@@ -888,27 +905,27 @@ function SettingsPage({ progress, content, onProgress }: { progress: AppProgress
                 const issues = validateContent({ vocabulary });
                 if (issues.length) throw new Error(issues[0].message);
                 onProgress({ ...progress, importedContent: { ...progress.importedContent, vocabulary } });
-                setMessage("Vocabulary CSV imported.");
+                setMessage("語彙一覧を読み込みました。");
               } catch (error) {
-                setMessage(error instanceof Error ? error.message : "This file does not contain a valid vocabulary list.");
+                setMessage("語彙一覧の形式を確認してください。");
               }
             });
           }} /></label>
-          <button onClick={() => download("jlpt-n2-progress.json", exportProgress(progress))}>Export all progress</button>
-          <label className="file-label">Import progress JSON<input type="file" accept="application/json" onChange={(event) => {
+          <button onClick={() => download("学習記録.json", exportProgress(progress))}>学習記録を書き出す</button>
+          <label className="file-label">学習記録を復元する<input type="file" accept="application/json" onChange={(event) => {
             const file = event.target.files?.[0];
             if (!file) return;
             readFile(file, (text) => {
               try {
                 onProgress(importProgress(text));
-                setMessage("Progress restored.");
+                setMessage("学習記録を復元しました。");
               } catch (error) {
-                setMessage(error instanceof Error ? error.message : "Progress file version is unsupported.");
+                setMessage("この記録ファイルは読み込めません。");
               }
             });
           }} /></label>
-          <button className="danger" onClick={() => window.confirm("Reset all local progress? This cannot be undone.") && onProgress({ ...emptyProgress, setup: createDefaultSetup() })}>Reset progress</button>
-          <p className="fineprint">Current validated content: {content.kanji.length} kanji, {content.vocabulary.length} vocabulary, {content.grammar.length} grammar, {content.questions.length} questions.</p>
+          <button className="danger" onClick={() => window.confirm("このブラウザーの学習記録をすべて初期化しますか。必要な記録は先に書き出してください。") && onProgress({ ...emptyProgress, setup: createDefaultSetup() })}>記録を初期化する</button>
+          <p className="fineprint">収録内容：漢字 {content.kanji.length}項目、語彙 {content.vocabulary.length}語、文法 {content.grammar.length}項目、問題 {content.questions.length}問。</p>
         </section>
       </div>
     </section>

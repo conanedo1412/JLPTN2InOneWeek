@@ -1,5 +1,6 @@
 import type { GrammarItem, KanjiItem, QuizQuestion, StudyContent, VocabularyItem } from "../types";
 import { expandedKanji } from "./expandedKanji";
+import { improveQuestionChoices } from "./questionQuality";
 import { extendedReading } from "./reading";
 import { shuffleDeterministic, uniqueTake } from "../utils/random";
 
@@ -578,7 +579,7 @@ function buildQuestions(): QuizQuestion[] {
       category: "vocabulary",
       subcategory: "vocabulary-context",
       type: "fill-blank",
-      prompt: `説明とよく使う組み合わせを見て、最も自然な語を選びなさい。\n説明：${item.japaneseDefinition}\nよく使う形：${item.collocation.replaceAll(item.word, "（　）")}`,
+      prompt: `次の説明に当てはまる語を選びなさい。\n${item.japaneseDefinition}`,
       choices: choices(item.word, starterVocabulary.map((v) => v.word), `${item.id}-context`),
       correctAnswer: item.word,
       explanation: `正解は「${item.word}」。例文：${item.exampleSentence}`,
@@ -731,7 +732,7 @@ function buildExpandedKanjiQuestions(): QuizQuestion[] {
   });
 }
 
-export const starterQuestions = [...buildQuestions(), ...buildExpandedKanjiQuestions(), ...extendedReading];
+export const starterQuestions = improveQuestionChoices([...buildQuestions(), ...buildExpandedKanjiQuestions(), ...extendedReading], starterVocabulary, starterGrammar, allBundledKanji);
 
 export const starterContent: StudyContent = {
   kanji: allBundledKanji,

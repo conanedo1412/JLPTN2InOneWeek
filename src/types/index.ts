@@ -76,6 +76,7 @@ export interface StudyContent {
 }
 
 export interface SetupInfo {
+  lastStudyDate?: string;
   examDate: string;
   dailyMinutes: 30 | 60 | 90 | 120;
   activeDay: number;
@@ -114,6 +115,7 @@ export interface MistakeRecord {
 }
 
 export interface ReviewState {
+  reviewedOn?: string;
   contentId: string;
   dueDay: number;
   lastRating: Rating;
