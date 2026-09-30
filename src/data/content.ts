@@ -1,5 +1,6 @@
 import type { GrammarItem, KanjiItem, QuizQuestion, StudyContent, VocabularyItem } from "../types";
 import { expandedKanji } from "./expandedKanji";
+import { expandedVocabulary, expandedVocabularyQuestions } from "./expandedVocabulary";
 import { improveQuestionChoices } from "./questionQuality";
 import { extendedReading } from "./reading";
 import { shuffleDeterministic, uniqueTake } from "../utils/random";
@@ -736,7 +737,7 @@ export const starterQuestions = improveQuestionChoices([...buildQuestions(), ...
 
 export const starterContent: StudyContent = {
   kanji: allBundledKanji,
-  vocabulary: starterVocabulary,
+  vocabulary: [...starterVocabulary, ...expandedVocabulary],
   grammar: starterGrammar,
-  questions: starterQuestions
+  questions: [...starterQuestions, ...expandedVocabularyQuestions]
 };

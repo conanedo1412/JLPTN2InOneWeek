@@ -8,6 +8,7 @@ const base = process.env.VITE_BASE_PATH ?? (process.env.GITHUB_ACTIONS && repoNa
 
 export default defineConfig({
   base,
+  build: { rollupOptions: { output: { manualChunks(id) { if (id.endsWith("expandedVocabulary.json")) return "vocabulary-data"; } } } },
   plugins: [
     react(),
     VitePWA({
@@ -32,6 +33,7 @@ export default defineConfig({
         ]
       },
       workbox: {
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         cleanupOutdatedCaches: true,
         navigateFallback: "index.html",
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"]

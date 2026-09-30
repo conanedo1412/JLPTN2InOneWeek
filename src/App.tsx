@@ -885,6 +885,7 @@ function SettingsPage({ progress, content, onProgress }: { progress: AppProgress
         </section>
         <section className="panel">
           <h2>記録の保存と復元</h2>
+          <p className="fineprint">追加語彙の出典：<a href="https://www.edrdg.org/">電子化辞書研究開発グループ</a>、<a href="https://bond-lab.github.io/wnja/index.ja.html">日本語ワードネット（一・一版）</a>。著作権：情報通信研究機構（二〇〇九～二〇一一年）、フランシス・ボンド（二〇一二～二〇二四年）、栗林孝行（二〇一六～二〇二四年）。<a href={`${import.meta.env.BASE_URL}licenses/jmdict.txt`}>読みの利用条件</a>・<a href={`${import.meta.env.BASE_URL}licenses/japanese-wordnet.txt`}>語義の利用条件</a>。</p>
           <p>学習記録はこの端末のブラウザーに自動保存され、三十日を過ぎても残ります。別の端末への移行やブラウザーのデータ削除に備え、定期的に書き出してください。</p>
           <label className="file-label">教材ファイルを読み込む<input type="file" accept="application/json" onChange={(event) => {
             const file = event.target.files?.[0];

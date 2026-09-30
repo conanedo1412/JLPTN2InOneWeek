@@ -23,7 +23,7 @@ export function validateContent(content: Partial<StudyContent>): ValidationIssue
   });
   content.vocabulary?.forEach((item) => {
     addId(item.id, "Vocabulary item");
-    if (!item.word || !item.reading || !item.meaning || !item.exampleSentence) issues.push({ message: `Vocabulary ${item.id} is missing required fields.` });
+    if (!item.word || !item.reading || !item.meaning || (!item.exampleSentence && !item.japaneseDefinition)) issues.push({ message: `Vocabulary ${item.id} is missing required fields.` });
     if (item.difficulty < 1 || item.difficulty > 5) issues.push({ message: `Vocabulary ${item.id} has invalid difficulty.` });
   });
   content.grammar?.forEach((item) => {
