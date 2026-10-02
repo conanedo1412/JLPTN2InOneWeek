@@ -8,7 +8,7 @@ export function Campaign({ progress, onDay }: { progress: AppProgress; onDay: (d
     <div className="adventurer">
       <img src={`${import.meta.env.BASE_URL}icons/icon.svg`} alt="" width="72" height="72" />
       <div><p className="eyebrow">{stats.level < 5 ? "見習い" : stats.level < 10 ? "学び手" : "賢者"}</p><h2>レベル{stats.level}</h2><span>経験値 {stats.xp.toLocaleString()} · 次のレベルまで {stats.nextLevel}</span><progress max="100" value={stats.levelProgress} aria-label="次のレベルまで" /></div>
-      <div className="daily-quest"><strong>今日の目標</strong><span>{Math.min(stats.daily, 20)} / 20問</span><progress max="20" value={Math.min(stats.daily, 20)} aria-label="今日の目標" /><small>連続{stats.streak}日 · 確信のある正解{stats.mastered}問</small></div>
+      <div className="daily-quest"><strong>今日の追加目標：異なる二十問に解答</strong><span>{Math.min(stats.daily, 20)} / 20問</span><progress max="20" value={Math.min(stats.daily, 20)} aria-label="今日の追加目標" /><small>四つの課題とは別の目標です。提出済みの解答を集計し、同じ問題は一日一回だけ数えます。</small><small>連続{stats.streak}日 · 確信のある正解{stats.mastered}問</small></div>
     </div>
     <p>これまでの目標達成：{stats.completedQuestDays}日</p>
     <h2>三十日間の学習の道</h2>

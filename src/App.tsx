@@ -7,7 +7,7 @@ import { Campaign } from "./features/progress/CampaignDashboard";
 import { ProgressBackup, ProgressDownload } from "./features/progress/ProgressBackup";
 import { campaignStats, dailyActivity } from "./features/progress/campaign";
 import { accuraciesBySubcategory, calculateWeakAreas, easyMaterialWarning, overallCompletion, subcategoryLabels } from "./features/progress/scoring";
-import { chapters, createDefaultSetup, monthPlan, getDayPlan } from "./features/study-plan/plan";
+import { chapters, createDefaultSetup, monthPlan, getDayPlan, taskDetails, type StudyTask } from "./features/study-plan/plan";
 import { advanceStudyDay, emptyProgress, loadProgress, saveProgress, STORAGE_KEY } from "./storage/progressStorage";
 import { parseContentJson, parseVocabularyCsv, validateContent } from "./services/importExport";
 import type { AppProgress, Confidence, GrammarItem, QuizQuestion, Rating, StudyCategory, StudyContent, Subcategory, VocabularyItem } from "./types";
@@ -88,9 +88,11 @@ export default function App() {
   const [progress, setProgress, saveFailed] = usePersistentProgress();
   const [page, setPage] = useState<Page>("today");
   const [quizPreset, setQuizPreset] = useState<QuizPreset>("quick");
+  const [activeTask, setActiveTask] = useState<{ task: StudyTask; day: number } | null>(null);
   const [toast, setToast] = useState("");
   const [restoreRevision, setRestoreRevision] = useState(0);
   const restoreProgress = (restored: AppProgress) => {
+    setActiveTask(null);
     setProgress(restored);
     setRestoreRevision(value => value + 1);
     setPage("today");
@@ -139,8 +141,21 @@ export default function App() {
   const updateProgress = (recipe: (current: AppProgress) => AppProgress) => setProgress((current) => recipe(current));
 
   const startQuiz = (preset: QuizPreset) => {
+    setActiveTask(null);
     setQuizPreset(preset);
     setPage("quiz");
+  };
+
+  const startTask = (task: StudyTask) => {
+    setActiveTask({ task, day: setup.activeDay });
+    if (task.mode === "learn") setPage("learn");
+    else if (task.mode === "mistakes") setPage("mistakes");
+    else { setQuizPreset(taskDetails(task, setup.activeDay, setup.dailyMinutes).preset); setPage("quiz"); }
+  };
+  const finishTask = () => {
+    if (activeTask) updateProgress(current => ({ ...current, completedTasks: [...new Set([...current.completedTasks, activeTask.task.id])] }));
+    setActiveTask(null);
+    setPage("today");
   };
 
   return (
@@ -156,7 +171,7 @@ export default function App() {
           </div>
           <nav aria-label="主な画面">
             {navItems.map((item) => (
-              <button key={item.page} className={page === item.page ? "active" : ""} onClick={() => setPage(item.page)}>
+              <button key={item.page} className={page === item.page ? "active" : ""} onClick={() => { setActiveTask(null); setPage(item.page); }}>
                 {item.label}
               </button>
             ))}
@@ -165,6 +180,15 @@ export default function App() {
 
         <main className="content" id="main" key={restoreRevision}>
           <ProgressBackup progress={progress} onRestore={restoreProgress} />
+          {activeTask && page !== "today" && <section className="task-guide" aria-label="取り組み中の課題">
+            <strong>{activeTask.day}日目 · {activeTask.task.title}{progress.completedTasks.includes(activeTask.task.id) ? "（達成）" : ""}</strong>
+            <p>{taskDetails(activeTask.task, activeTask.day, setup.dailyMinutes).goal}</p>
+            <p>{taskDetails(activeTask.task, activeTask.day, setup.dailyMinutes).detail}</p>
+            <div className="action-row">
+              <button onClick={() => { setPage("today"); setActiveTask(null); }}>今日の課題に戻る</button>
+              {activeTask.task.mode === "mistakes" && page === "mistakes" && <button className="primary" onClick={finishTask}>復習を完了</button>}
+            </div>
+          </section>}
           {saveFailed && <p role="alert" className="notice">学習記録を保存できませんでした。設定から記録を書き出し、ブラウザーの保存設定と空き容量を確認してください。</p>}
           {page === "today" && (
             <TodayPage
@@ -174,7 +198,7 @@ export default function App() {
               accuracies={accuracies}
               completion={completion}
               onStartQuiz={startQuiz}
-              onNavigate={setPage}
+              onStartTask={startTask}
               onTaskToggle={(taskId) =>
                 updateProgress((current) => ({
                   ...current,
@@ -191,20 +215,22 @@ export default function App() {
               }
             />
           )}
-          {page === "learn" && <LearnPage progress={progress} content={content} onProgress={updateProgress} />}
+          {page === "learn" && <LearnPage key={activeTask?.task.id ?? "free"} progress={progress} content={content} onProgress={updateProgress} guide={activeTask?.task.mode === "learn" ? activeTask : undefined} />}
           {page === "quiz" && (
             <QuizPage
+              key={activeTask?.task.id ?? "free"}
               preset={quizPreset}
               progress={progress}
               content={content}
               weakAreas={weakAreas}
-              onPreset={setQuizPreset}
+              onPreset={preset => { setActiveTask(null); setQuizPreset(preset); }}
               onComplete={(answers) => {
                 updateProgress((current) => {
                   const nextAnswers = [...current.answers, ...answers];
                   const nextMistakes = updateMistakes(current.mistakes, answers, content.questions);
                   return {
                     ...current,
+                    completedTasks: activeTask && !["learn", "mistakes"].includes(activeTask.task.mode) && answers.length > 0 && answers.every(answer => answer.selectedAnswer) ? [...new Set([...current.completedTasks, activeTask.task.id])] : current.completedTasks,
                     answers: nextAnswers,
                     mistakes: nextMistakes,
                     progressHistory: [
@@ -227,7 +253,7 @@ export default function App() {
 
         <nav className="bottom-nav" aria-label="画面の切り替え">
           {navItems.map((item) => (
-            <button key={item.page} className={page === item.page ? "active" : ""} onClick={() => setPage(item.page)}>
+            <button key={item.page} className={page === item.page ? "active" : ""} onClick={() => { setActiveTask(null); setPage(item.page); }}>
               {item.label}
             </button>
           ))}
@@ -311,7 +337,7 @@ function TodayPage({
   accuracies,
   completion,
   onStartQuiz,
-  onNavigate,
+  onStartTask,
   onTaskToggle,
   onSetupChange
 }: {
@@ -321,7 +347,7 @@ function TodayPage({
   accuracies: Record<Subcategory, number>;
   completion: number;
   onStartQuiz: (preset: QuizPreset) => void;
-  onNavigate: (page: Page) => void;
+  onStartTask: (task: StudyTask) => void;
   onTaskToggle: (taskId: string) => void;
   onSetupChange: (setup: Partial<NonNullable<AppProgress["setup"]>>) => void;
 }) {
@@ -333,7 +359,9 @@ function TodayPage({
   const vocabAccuracy = Math.round(((accuracies["vocabulary-recognition"] || 0) + (accuracies["vocabulary-context"] || 0)) / 2);
   const grammarAccuracy = Math.round(((accuracies["grammar-recognition"] || 0) + (accuracies["grammar-nuance"] || 0)) / 2);
   const activeWeak = weakAreas.filter((w) => w.score > 0).slice(0, 4);
-  const continuePreset: QuizPreset = setup.activeDay === 1 ? "diagnostic" : setup.activeDay % 6 === 0 ? "final" : "weak";
+  const nextTask = plan.tasks.find(task => !progress.completedTasks.includes(task.id));
+  const done = plan.tasks.filter(task => progress.completedTasks.includes(task.id)).length;
+  const plannedMinutes = plan.tasks.reduce((total, task) => total + taskDetails(task, setup.activeDay, setup.dailyMinutes).minutes, 0);
 
   return (
     <section className="page-stack">
@@ -353,12 +381,37 @@ function TodayPage({
         </div>
       </header>
 
+      <section className="daily-route" aria-label="今日の学習手順">
+        <div className="page-header"><div><h2>{nextTask ? "今日やること" : "今日の四つの課題を達成しました"}</h2><p>{done} / 4課題を達成 · 目安{plannedMinutes}分</p><p>{nextTask ? "上から順に取り組みましょう。" : "記録をダウンロードして、今日はここまでで大丈夫です。"}</p></div>
+          {nextTask ? <button className="primary" onClick={() => onStartTask(nextTask)}>{done === 0 ? "最初の課題へ" : "次の課題へ"}：{nextTask.title}</button> : <ProgressDownload progress={progress} />}
+        </div>
+        <progress max="4" value={done} aria-label="今日の課題の達成状況" />
+        <ol className="daily-steps">
+          {plan.tasks.map((task, index) => {
+            const details = taskDetails(task, setup.activeDay, setup.dailyMinutes);
+            const complete = progress.completedTasks.includes(task.id);
+            return <li key={task.id} className={complete ? "step-complete" : task.id === nextTask?.id ? "step-current" : ""}>
+              <div><span className="step-number">{index + 1}</span><strong>{details.goal}</strong><span className="step-status">{complete ? "達成" : task.id === nextTask?.id ? "次に取り組む課題" : "未完了"} · 目安{details.minutes}分</span></div>
+              <p>{details.detail}</p>
+              <div className="action-row"><button onClick={() => onStartTask(task)}>{complete ? "もう一度取り組む" : `${index + 1}番目の課題を始める`}</button>
+                {complete && <button onClick={() => onTaskToggle(task.id)}>達成を取り消す</button>}
+              </div>
+            </li>;
+          })}
+        </ol>
+        <p className="fineprint">達成した課題と経験値は保存されます。翌日は次の学習日に進みます。未完了の課題は「学習日」から戻って続けられます。</p>
+      </section>
       {warning && <div className="notice" role="status">{warning}</div>}
+      <details className="optional-study"><summary>追加で練習する</summary><div className="action-row">
+        <button onClick={() => onStartQuiz("quick")}>短時間で復習</button>
+        <button onClick={() => onStartQuiz("weak")}>弱点を練習</button>
+        <button onClick={() => onStartQuiz("timed")}>時間を計って練習</button>
+      </div></details>
       <Campaign progress={progress} onDay={activeDay => onSetupChange({ activeDay })} />
 
       <div className="metric-grid">
         <Metric label="試験までの日数" value={daysRemaining < 0 ? "試験日を過ぎました" : `${daysRemaining}`} />
-        <Metric label="学習時間" value={`${setup.dailyMinutes}分`} />
+        <Metric label="設定した学習時間" value={`${setup.dailyMinutes}分`} />
         <Metric label="課題の達成率" value={`${completion}%`} />
         <Metric label="未復習の問題" value={`${progress.mistakes.filter((m) => !m.corrected).length}`} />
         <Metric label="漢字の正答率" value={`${kanjiAccuracy}%`} />
@@ -367,29 +420,7 @@ function TodayPage({
         <Metric label="連続学習" value={`${calculateStreak(progress)}日`} />
       </div>
 
-      <div className="action-row">
-        <button className="primary" onClick={() => onStartQuiz(continuePreset)}>今日の学習を続ける</button>
-        <button onClick={() => onStartQuiz("quick")}>短時間で復習</button>
-        <button onClick={() => onStartQuiz("weak")}>弱点を練習</button>
-        <button onClick={() => onStartQuiz("timed")}>時間を計って練習</button>
-      </div>
-
       <section className="split">
-        <div className="panel">
-          <h2>今日の課題</h2>
-          <div className="task-list">
-            {plan.tasks.map((task) => (
-              <div className="task-row" key={task.id}>
-                <input aria-label={`${task.title}を完了`} type="checkbox" checked={progress.completedTasks.includes(task.id)} onChange={() => onTaskToggle(task.id)} />
-                <span>
-                  <strong>{task.title}</strong>
-                  <small>{Math.round(task.minutes * setup.dailyMinutes / 90)}分 · {task.focus}</small>
-                </span>
-                <button onClick={() => task.mode === "learn" ? onNavigate("learn") : task.mode === "mistakes" ? onNavigate("mistakes") : onStartQuiz(task.id.endsWith("reading") ? "reading" : task.mode === "diagnostic" ? "diagnostic" : task.mode === "timed" ? "final" : (["kanji", "vocab", "grammar", "grammar", "reading", "weak"] as QuizPreset[])[(setup.activeDay - 1) % 6])}>開始</button>
-              </div>
-            ))}
-          </div>
-        </div>
         <div className="panel">
           <h2>重点的に復習する分野</h2>
           <div className="tag-list">
@@ -408,11 +439,11 @@ function TodayPage({
   );
 }
 
-function LearnPage({ progress, content, onProgress }: { progress: AppProgress; content: StudyContent; onProgress: (recipe: (current: AppProgress) => AppProgress) => void }) {
+function LearnPage({ progress, content, onProgress, guide }: { progress: AppProgress; content: StudyContent; onProgress: (recipe: (current: AppProgress) => AppProgress) => void; guide?: {task: StudyTask; day: number} }) {
   const setup = progress.setup!;
   const [reviewSnapshot, setReviewSnapshot] = useState(progress.review);
   const dueIds = useMemo(() => dueReviewIds(reviewSnapshot, setup.activeDay), [reviewSnapshot, setup.activeDay]);
-  const [kind, setKind] = useState<"kanji" | "vocabulary" | "grammar">("kanji");
+  const [kind, setKind] = useState<"kanji" | "vocabulary" | "grammar">(guide ? taskDetails(guide.task, guide.day, setup.dailyMinutes).kind : "kanji");
   const [deckMode, setDeckMode] = useState<"daily" | "mixed" | "due" | "hard" | "random">("daily");
   const [sessionSeed, setSessionSeed] = useState(() => `cards-${Date.now()}`);
   const [index, setIndex] = useState(0);
@@ -421,6 +452,10 @@ function LearnPage({ progress, content, onProgress }: { progress: AppProgress; c
     const source: FlashcardItem[] = kind === "kanji" ? content.kanji : kind === "vocabulary" ? content.vocabulary : content.grammar;
     const due = source.filter((item) => dueIds.includes(item.id));
     const hard = [...source].sort((a, b) => b.difficulty - a.difficulty);
+    if (guide) {
+      const limit = taskDetails(guide.task, guide.day, setup.dailyMinutes).cardCount;
+      return [...new Map([...due, ...shuffleDeterministic(source, `daily-${guide.day}-${kind}`)].map(item => [item.id, item])).values()].slice(0, limit);
+    }
     if (deckMode === "daily") {
       const chunk = Math.ceil(source.length / 24);
       const day = Math.min(setup.activeDay, 24) - 1;
@@ -431,7 +466,7 @@ function LearnPage({ progress, content, onProgress }: { progress: AppProgress; c
     if (deckMode === "hard") return shuffleDeterministic(hard.slice(0, Math.max(80, Math.floor(hard.length / 3))), sessionSeed).slice(0, 60);
     if (deckMode === "random") return shuffleDeterministic(source, sessionSeed).slice(0, 60);
     return [...due, ...shuffleDeterministic(source, sessionSeed)].filter((item, itemIndex, list) => list.findIndex((other) => other.id === item.id) === itemIndex).slice(0, 60);
-  }, [content, deckMode, dueIds, kind, sessionSeed, setup.activeDay]);
+  }, [content, deckMode, dueIds, kind, sessionSeed, setup.activeDay, setup.dailyMinutes, guide]);
   const card = cards[index];
 
   const resetDeck = (nextKind = kind, nextMode = deckMode) => {
@@ -448,7 +483,7 @@ function LearnPage({ progress, content, onProgress }: { progress: AppProgress; c
     onProgress((current) => {
       const existing = current.review.find((item) => item.contentId === card.id);
       const next = { ...scheduleReview(existing, card.id, setup.activeDay, rating), reviewedOn: todayLocal() };
-      return { ...current, review: [...current.review.filter((item) => item.contentId !== card.id), next] };
+      return { ...current, completedTasks: guide && index + 1 >= cards.length ? [...new Set([...current.completedTasks, guide.task.id])] : current.completedTasks, review: [...current.review.filter((item) => item.contentId !== card.id), next] };
     });
     setRevealed(false);
     setIndex((value) => value + 1);
@@ -462,7 +497,7 @@ function LearnPage({ progress, content, onProgress }: { progress: AppProgress; c
           <h1>漢字・語彙・文法</h1>
           <p>漢字 {content.kanji.length}項目 · 語彙 {content.vocabulary.length}語 · 文法 {content.grammar.length}項目</p>
         </div>
-        <div className="flashcard-controls">
+        {!guide && <div className="flashcard-controls">
           <div className="segmented" role="group" aria-label="学習分野">
             {(["kanji", "vocabulary", "grammar"] as const).map((item) => (
               <button key={item} className={kind === item ? "active" : ""} onClick={() => resetDeck(item, deckMode)}>{kindLabels[item]}</button>
@@ -474,7 +509,7 @@ function LearnPage({ progress, content, onProgress }: { progress: AppProgress; c
             ))}
           </div>
           <button onClick={() => resetDeck(kind, deckMode)}>順番を変える</button>
-        </div>
+        </div>}
       </header>
       {card ? (
         <article className="study-card">
@@ -491,7 +526,7 @@ function LearnPage({ progress, content, onProgress }: { progress: AppProgress; c
             ))}
           </div>
         </article>
-      ) : <div className="panel"><h2>{cards.length ? "今回の学習は完了です" : "復習予定のカードはありません"}</h2><p>今回は{index}枚を学習しました。</p><button onClick={() => resetDeck(kind, deckMode)}>次の学習を始める</button></div>}
+      ) : <div className="panel"><h2>{cards.length ? "今回の学習は完了です" : "復習予定のカードはありません"}</h2><p>今回は{index}枚を学習しました。</p>{!guide && <button onClick={() => resetDeck(kind, deckMode)}>次の学習を始める</button>}</div>}
     </section>
   );
 }
