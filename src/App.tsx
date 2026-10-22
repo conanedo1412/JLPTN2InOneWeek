@@ -4,6 +4,8 @@ import { dueReviewIds, scheduleReview } from "./features/learn/scheduler";
 import { updateMistakes } from "./features/mistakes/mistakeLogic";
 import { balancedPractice, makeAnswerRecord, selectQuestions } from "./features/quiz/quizLogic";
 import { Campaign } from "./features/progress/CampaignDashboard";
+import { LearningCoverage } from "./features/progress/LearningCoverage";
+import { isSingleKanji, seenContentIds, unseenQuestions, unseenCards } from "./features/progress/coverage";
 import { ProgressBackup, ProgressDownload } from "./features/progress/ProgressBackup";
 import { campaignStats, dailyActivity } from "./features/progress/campaign";
 import { accuraciesBySubcategory, calculateWeakAreas, easyMaterialWarning, overallCompletion, subcategoryLabels } from "./features/progress/scoring";
@@ -215,11 +217,13 @@ export default function App() {
               }
             />
           )}
-          {page === "learn" && <LearnPage key={activeTask?.task.id ?? "free"} progress={progress} content={content} onProgress={updateProgress} guide={activeTask?.task.mode === "learn" ? activeTask : undefined} />}
+          {page === "learn" && <LearnPage key={activeTask?.task.id ?? "free"} progress={progress} content={content} onProgress={updateProgress} guide={activeTask?.task.mode === "learn" ? activeTask : undefined} onExhausted={finishTask} />}
           {page === "quiz" && (
             <QuizPage
               key={activeTask?.task.id ?? "free"}
               preset={quizPreset}
+              daily={Boolean(activeTask)}
+              onExhausted={finishTask}
               progress={progress}
               content={content}
               weakAreas={weakAreas}
@@ -247,7 +251,7 @@ export default function App() {
             />
           )}
           {page === "mistakes" && <MistakesPage progress={progress} content={content} onStartQuiz={startQuiz} />}
-          {page === "progress" && <ProgressPage progress={progress} weakAreas={weakAreas} accuracies={accuracies} />}
+          {page === "progress" && <ProgressPage progress={progress} content={content} weakAreas={weakAreas} accuracies={accuracies} />}
           {page === "settings" && <SettingsPage progress={progress} content={content} onProgress={setProgress} />}
         </main>
 
@@ -402,6 +406,7 @@ function TodayPage({
         <p className="fineprint">達成した課題と経験値は保存されます。翌日は次の学習日に進みます。未完了の課題は「学習日」から戻って続けられます。</p>
       </section>
       {warning && <div className="notice" role="status">{warning}</div>}
+      <LearningCoverage progress={progress} content={content} />
       <details className="optional-study"><summary>追加で練習する</summary><div className="action-row">
         <button onClick={() => onStartQuiz("quick")}>短時間で復習</button>
         <button onClick={() => onStartQuiz("weak")}>弱点を練習</button>
@@ -439,9 +444,10 @@ function TodayPage({
   );
 }
 
-function LearnPage({ progress, content, onProgress, guide }: { progress: AppProgress; content: StudyContent; onProgress: (recipe: (current: AppProgress) => AppProgress) => void; guide?: {task: StudyTask; day: number} }) {
+function LearnPage({ progress, content, onProgress, guide, onExhausted }: { progress: AppProgress; content: StudyContent; onProgress: (recipe: (current: AppProgress) => AppProgress) => void; guide?: {task: StudyTask; day: number}; onExhausted: () => void }) {
   const setup = progress.setup!;
   const [reviewSnapshot, setReviewSnapshot] = useState(progress.review);
+  const [seenSnapshot, setSeenSnapshot] = useState(() => seenContentIds(progress, content));
   const dueIds = useMemo(() => dueReviewIds(reviewSnapshot, setup.activeDay), [reviewSnapshot, setup.activeDay]);
   const [kind, setKind] = useState<"kanji" | "vocabulary" | "grammar">(guide ? taskDetails(guide.task, guide.day, setup.dailyMinutes).kind : "kanji");
   const [deckMode, setDeckMode] = useState<"daily" | "mixed" | "due" | "hard" | "random">("daily");
@@ -454,24 +460,22 @@ function LearnPage({ progress, content, onProgress, guide }: { progress: AppProg
     const hard = [...source].sort((a, b) => b.difficulty - a.difficulty);
     if (guide) {
       const limit = taskDetails(guide.task, guide.day, setup.dailyMinutes).cardCount;
-      return [...new Map([...due, ...shuffleDeterministic(source, `daily-${guide.day}-${kind}`)].map(item => [item.id, item])).values()].slice(0, limit);
+      return shuffleDeterministic(unseenCards(source, seenSnapshot).filter(item => !("kanji" in item) || isSingleKanji(item.kanji)), `daily-${guide.day}-${kind}`).slice(0, limit);
     }
     if (deckMode === "daily") {
-      const chunk = Math.ceil(source.length / 24);
-      const day = Math.min(setup.activeDay, 24) - 1;
-      const newCards = setup.activeDay <= 24 ? source.slice(day * chunk, (day + 1) * chunk) : [];
-      return [...newCards, ...due].filter((item, i, list) => list.findIndex(other => other.id === item.id) === i);
+      return shuffleDeterministic(unseenCards(source, seenSnapshot).filter(item => !("kanji" in item) || isSingleKanji(item.kanji)), `daily-${setup.activeDay}-${kind}`).slice(0, Math.max(10, Math.round(setup.dailyMinutes / 3)));
     }
     if (deckMode === "due") return due.slice(0, 60);
     if (deckMode === "hard") return shuffleDeterministic(hard.slice(0, Math.max(80, Math.floor(hard.length / 3))), sessionSeed).slice(0, 60);
     if (deckMode === "random") return shuffleDeterministic(source, sessionSeed).slice(0, 60);
     return [...due, ...shuffleDeterministic(source, sessionSeed)].filter((item, itemIndex, list) => list.findIndex((other) => other.id === item.id) === itemIndex).slice(0, 60);
-  }, [content, deckMode, dueIds, kind, sessionSeed, setup.activeDay, setup.dailyMinutes, guide]);
+  }, [content, deckMode, dueIds, kind, sessionSeed, setup.activeDay, setup.dailyMinutes, guide, seenSnapshot]);
   const card = cards[index];
 
   const resetDeck = (nextKind = kind, nextMode = deckMode) => {
     setKind(nextKind);
     setReviewSnapshot(progress.review);
+    setSeenSnapshot(seenContentIds(progress, content));
     setDeckMode(nextMode);
     setIndex(0);
     setRevealed(false);
@@ -511,6 +515,7 @@ function LearnPage({ progress, content, onProgress, guide }: { progress: AppProg
           <button onClick={() => resetDeck(kind, deckMode)}>順番を変える</button>
         </div>}
       </header>
+      {(guide || deckMode === "daily") && <p className="notice">新出学習：未学習の項目だけを最大{Math.max(10, Math.round(setup.dailyMinutes / 3))}枚選びます。今回は{cards.length}枚です。復習は「復習予定」で別に取り組めます。</p>}
       {card ? (
         <article className="study-card">
           <div className="card-meta">
@@ -526,7 +531,7 @@ function LearnPage({ progress, content, onProgress, guide }: { progress: AppProg
             ))}
           </div>
         </article>
-      ) : <div className="panel"><h2>{cards.length ? "今回の学習は完了です" : "復習予定のカードはありません"}</h2><p>今回は{index}枚を学習しました。</p>{!guide && <button onClick={() => resetDeck(kind, deckMode)}>次の学習を始める</button>}</div>}
+      ) : <div className="panel"><h2>{cards.length ? "今回の学習は完了です" : guide || deckMode === "daily" ? "この分野の新出カードはすべて学習済みです" : "該当するカードはありません"}</h2><p>今回は{index}枚を学習しました。</p>{guide && !cards.length && <button onClick={onExhausted}>新出学習を完了して今日の課題に戻る</button>}{!guide && <button onClick={() => resetDeck(kind, deckMode)}>次の学習を始める</button>}</div>}
     </section>
   );
 }
@@ -571,7 +576,9 @@ function QuizPage({
   content,
   weakAreas,
   onPreset,
-  onComplete
+  onComplete,
+  daily,
+  onExhausted
 }: {
   preset: QuizPreset;
   progress: AppProgress;
@@ -579,23 +586,27 @@ function QuizPage({
   weakAreas: ReturnType<typeof calculateWeakAreas>;
   onPreset: (preset: QuizPreset) => void;
   onComplete: (answers: ReturnType<typeof makeAnswerRecord>[]) => void;
+  daily: boolean;
+  onExhausted: () => void;
 }) {
   const setup = progress.setup!;
   const [duration, setDuration] = useState(20);
   const [sessionSeed, setSessionSeed] = useState(() => `${Date.now()}`);
+  const [historySnapshot, setHistorySnapshot] = useState(progress);
   const [weightedIds] = useState(() => progress.mistakes.filter((m) => !m.corrected || m.guessedCorrectly).map((m) => m.questionId));
   const [weakSubs] = useState(() => weakAreas.filter((w) => w.label === "weak" || w.label === "critical").map((w) => w.subcategory));
   const questions = useMemo(() => {
-    if (preset === "diagnostic") return balancedDiagnostic(content.questions, sessionSeed);
-    if (preset === "quick") return balancedPractice(content.questions, 12, sessionSeed);
-    if (preset === "kanji") return selectQuestions(content.questions, { count: 20, seed: sessionSeed, categories: ["kanji"], weightedIds });
-    if (preset === "vocab") return selectQuestions(content.questions, { count: 20, seed: sessionSeed, categories: ["vocabulary"], weightedIds });
-    if (preset === "grammar") return selectQuestions(content.questions, { count: 20, seed: sessionSeed, categories: ["grammar", "sentence-ordering"], weightedIds });
-    if (preset === "reading") return selectQuestions(content.questions, { count: 6, seed: sessionSeed, categories: ["reading"], weightedIds });
-    if (preset === "final") return balancedPractice(content.questions, 48, sessionSeed);
-    if (preset === "weak") return selectQuestions(content.questions, { count: 20, seed: sessionSeed, subcategories: weakSubs.length ? weakSubs : undefined, weightedIds });
-    return balancedPractice(content.questions, Math.max(12, duration), sessionSeed);
-  }, [content.questions, duration, preset, sessionSeed, weakSubs, weightedIds]);
+    const bank = daily ? unseenQuestions(content.questions, historySnapshot) : content.questions;
+    if (preset === "diagnostic") return balancedDiagnostic(bank, sessionSeed);
+    if (preset === "quick") return balancedPractice(bank, 12, sessionSeed);
+    if (preset === "kanji") return selectQuestions(bank, { count: 20, seed: sessionSeed, categories: ["kanji"], weightedIds });
+    if (preset === "vocab") return selectQuestions(bank, { count: 20, seed: sessionSeed, categories: ["vocabulary"], weightedIds });
+    if (preset === "grammar") return selectQuestions(bank, { count: 20, seed: sessionSeed, categories: ["grammar", "sentence-ordering"], weightedIds });
+    if (preset === "reading") return selectQuestions(bank, { count: 6, seed: sessionSeed, categories: ["reading"], weightedIds });
+    if (preset === "final") return balancedPractice(bank, 48, sessionSeed);
+    if (preset === "weak") return selectQuestions(bank, { count: 20, seed: sessionSeed, subcategories: weakSubs.length ? weakSubs : undefined, weightedIds });
+    return balancedPractice(bank, Math.max(12, duration), sessionSeed);
+  }, [content.questions, duration, preset, sessionSeed, weakSubs, weightedIds, daily, historySnapshot]);
 
   return (
     <section className="page-stack">
@@ -623,15 +634,16 @@ function QuizPage({
           )}
         </div>
       </header>
-      <QuizSession
+      {daily && <p className="notice">新出問題：未出題から{questions.length}問。残りが少ない場合は問題数を減らし、解いた問題では補いません。復習は「追加で練習する」から選べます。</p>}
+      {daily && !questions.length ? <section><h2>この範囲の新出問題はすべて出題済みです</h2><button onClick={onExhausted}>新出学習を完了して今日の課題に戻る</button></section> : <QuizSession
         key={`${preset}-${duration}-${questions.map((q) => q.id).join("-")}`}
         questions={questions}
         timedMinutes={preset === "final" ? 60 : preset === "timed" ? duration : undefined}
         activeDay={setup.activeDay}
         onComplete={onComplete}
         backup={<ProgressDownload progress={progress} />}
-      />
-      <button onClick={() => setSessionSeed(`${Date.now()}`)}>新しい問題に挑戦</button>
+      />}
+      <button disabled={daily && !questions.length} onClick={() => { setHistorySnapshot(progress); setSessionSeed(`${Date.now()}`); }}>新しい問題に挑戦</button>
     </section>
   );
 }
@@ -835,7 +847,7 @@ function MistakesPage({ progress, content, onStartQuiz }: { progress: AppProgres
   );
 }
 
-function ProgressPage({ progress, weakAreas, accuracies }: { progress: AppProgress; weakAreas: ReturnType<typeof calculateWeakAreas>; accuracies: Record<Subcategory, number> }) {
+function ProgressPage({ progress, content, weakAreas, accuracies }: { progress: AppProgress; content: StudyContent; weakAreas: ReturnType<typeof calculateWeakAreas>; accuracies: Record<Subcategory, number> }) {
   return (
     <section className="page-stack">
       <header className="page-header">
@@ -845,6 +857,7 @@ function ProgressPage({ progress, weakAreas, accuracies }: { progress: AppProgre
           <p>正答率と誤答の傾向から復習する分野を確認できます。本試験の得点予測ではありません。</p>
         </div>
       </header>
+      <LearningCoverage progress={progress} content={content} />
       <div className="split">
         <div className="panel">
           <h2>分野別の正答率</h2>

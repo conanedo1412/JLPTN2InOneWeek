@@ -49,7 +49,7 @@ export function taskDetails(task: StudyTask, day: number, dailyMinutes: number):
   const preset = task.id.endsWith("reading") ? "reading" : task.mode === "diagnostic" ? "diagnostic" : task.mode === "timed" ? "final" : (["kanji", "vocab", "grammar", "grammar", "reading", "weak"] as const)[(day - 1) % 6];
   const count = preset === "diagnostic" ? 46 : preset === "final" ? 48 : preset === "reading" ? 6 : 20;
   const minutes = preset === "final" && task.mode === "timed" ? 60 : Math.round(task.minutes * dailyMinutes / 90);
-  if (task.mode === "learn") return { kind, cardCount, preset, minutes, goal: `${kindLabel}の単語帳を${cardCount}枚復習`, detail: "答えを思い出してから、読み・意味を確認。覚え具合を評価したら一枚完了です。全枚数を終えると自動で達成になります。" };
+  if (task.mode === "learn") return { kind, cardCount, preset, minutes, goal: `${kindLabel}の新出単語帳を最大${cardCount}枚学習`, detail: "未学習だけを選び、学習済みでは補いません。読み・意味を確認して覚え具合を評価すると一枚完了です。全枚数を終えると自動で達成になります。" };
   if (task.mode === "mistakes") return { kind, cardCount, preset, minutes, goal: "誤答を最大五問見直す", detail: "正解の根拠と、自分の選択肢が違う理由を確認します。確認後は「復習を完了」。誤答がなければ、そのまま完了で大丈夫です。" };
-  return { kind, cardCount, preset, minutes, goal: `${task.id.endsWith("reading") ? "読解" : task.title}を${count}問解く${preset === "final" ? "（制限時間六十分）" : ""}`, detail: "全問に解答して提出すると自動で達成になります。正答率は達成条件ではありません。結果の解説も確認しましょう。" };
+  return { kind, cardCount, preset, minutes, goal: `${task.id.endsWith("reading") ? "読解" : task.title}の新出問題を最大${count}問解く${preset === "final" ? "（制限時間六十分）" : ""}`, detail: "出題済みの問題は除きます。残りが少なければ問題数を減らします。全問に解答して提出すると達成です。正答率は達成条件ではありません。" };
 }

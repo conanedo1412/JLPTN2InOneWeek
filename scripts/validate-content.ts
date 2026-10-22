@@ -1,7 +1,12 @@
 import { starterContent } from "../src/data/content";
 import { validateContent } from "../src/services/importExport";
+import { isSingleKanji } from "../src/features/progress/coverage";
 
 const issues = validateContent(starterContent);
+const individualKanji = starterContent.kanji.filter(k => isSingleKanji(k.kanji));
+if (new Set(individualKanji.map(k=>k.kanji)).size !== 979) issues.push({ message: "Expected 979 unique individual kanji." });
+const quizCovered = new Set(starterContent.questions.filter(q=>!q.tags.includes("retired")).map(q=>q.relatedContentId));
+if (individualKanji.some(k=>!quizCovered.has(k.id))) issues.push({ message: "Individual kanji missing active quiz coverage." });
 
 if (starterContent.kanji.length < 1000) issues.push({ message: `Expected at least 1000 kanji items, found ${starterContent.kanji.length}.` });
 if (starterContent.vocabulary.length !== 6000) issues.push({ message: `Expected 6000 vocabulary items, found ${starterContent.vocabulary.length}.` });

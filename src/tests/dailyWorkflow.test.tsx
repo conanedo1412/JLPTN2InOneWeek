@@ -17,7 +17,7 @@ describe("guided daily workflow", () => {
   it("starts with a bounded card deck, saves completion, and offers the next step", () => {
     setup();
     render(<App />);
-    expect(screen.getByText("漢字の単語帳を10枚復習")).toBeTruthy();
+    expect(screen.getByText("漢字の新出単語帳を最大10枚学習")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "最初の課題へ：今日の単語帳" }));
     expect(screen.getByText("1 / 10")).toBeTruthy();
     for (let i = 0; i < 10; i++) {

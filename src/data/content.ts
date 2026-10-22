@@ -695,7 +695,7 @@ function buildQuestions(): QuizQuestion[] {
 }
 
 function buildExpandedKanjiQuestions(): QuizQuestion[] {
-  const questionKanji = shuffleDeterministic(expandedKanji, "expanded-kanji-questions").slice(0, 320);
+  const questionKanji = shuffleDeterministic(expandedKanji, "expanded-kanji-questions");
   const readingPool = expandedKanji.map((item) => item.readings[0]).filter(Boolean);
   const kanjiPool = japaneseOnlyChoicePool(expandedKanji, (item) => item.kanji);
   return questionKanji.flatMap((item, index) => {
@@ -713,6 +713,8 @@ function buildExpandedKanjiQuestions(): QuizQuestion[] {
       difficulty: item.difficulty,
       tags: item.tags
     };
+    // Preserve the original 320 question pairs and their IDs; extend reading coverage only.
+    if (index >= 320) return [readingQuestion];
     const meaningQuestion: QuizQuestion = {
       id: `q-ekm-${String(index + 1).padStart(4, "0")}`,
       category: "kanji",
